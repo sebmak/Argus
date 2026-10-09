@@ -24,19 +24,17 @@ class RtspConfigRequest(BaseModel):
     mqtt_host: Optional[str] = Field(None, description="MQTT broker host IP / hostname")
     mqtt_port: Optional[int] = Field(None, description="MQTT broker port (e.g. 1883)")
     mqtt_topic: Optional[str] = Field(None, description="MQTT publication topic")
+    mqtt_user: Optional[str] = Field(None, description="MQTT broker username")
+    mqtt_password: Optional[str] = Field(None, description="MQTT broker password")
 
 @router.get("/status")
 async def get_rtsp_status():
     """Returns the current state and telemetry of the RTSP worker thread."""
+    from ..core.events import get_mqtt_status
     status_data = rtsp_worker.get_status()
     status_data["webhook_url"] = settings.RTSP_WEBHOOK_URL
     status_data["webhook_only_known_faces"] = settings.WEBHOOK_ONLY_KNOWN_FACES
-    status_data["mqtt"] = {
-        "enabled": settings.MQTT_ENABLED,
-        "host": settings.MQTT_HOST,
-        "port": settings.MQTT_PORT,
-        "topic": settings.MQTT_TOPIC
-    }
+    status_data["mqtt"] = get_mqtt_status()
     return status_data
 
 @router.post("/start")
@@ -80,6 +78,10 @@ async def update_rtsp_config(payload: RtspConfigRequest):
         updates["mqtt_port"] = payload.mqtt_port
     if payload.mqtt_topic is not None:
         updates["mqtt_topic"] = payload.mqtt_topic.strip()
+    if payload.mqtt_user is not None:
+        updates["mqtt_user"] = payload.mqtt_user.strip()
+    if payload.mqtt_password is not None:
+        updates["mqtt_password"] = payload.mqtt_password
 
     save_settings_bulk(updates)
 
@@ -96,7 +98,8 @@ async def update_rtsp_config(payload: RtspConfigRequest):
             "mqtt_enabled": settings.MQTT_ENABLED,
             "mqtt_host": settings.MQTT_HOST,
             "mqtt_port": settings.MQTT_PORT,
-            "mqtt_topic": settings.MQTT_TOPIC
+            "mqtt_topic": settings.MQTT_TOPIC,
+            "mqtt_user": settings.MQTT_USER
         }
     }
 

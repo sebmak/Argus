@@ -622,13 +622,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const mqtt_host = document.getElementById("cfg-mqtt-host").value.trim();
       const mqtt_port = parseInt(document.getElementById("cfg-mqtt-port").value) || 1883;
       const mqtt_topic = document.getElementById("cfg-mqtt-topic").value.trim();
+      const mqtt_user = document.getElementById("cfg-mqtt-user") ? document.getElementById("cfg-mqtt-user").value.trim() : "";
+      const mqtt_password = document.getElementById("cfg-mqtt-pass") ? document.getElementById("cfg-mqtt-pass").value : "";
 
       try {
         await apiFetch("/api/v1/rtsp/config", {
           method: "POST",
           body: JSON.stringify({
             url, camera_name, fps, cooldown_seconds, webhook_url, webhook_only_known_faces,
-            mqtt_enabled, mqtt_host, mqtt_port, mqtt_topic
+            mqtt_enabled, mqtt_host, mqtt_port, mqtt_topic, mqtt_user, mqtt_password
           })
         });
         showToast("Stream and MQTT settings updated!", "success");
@@ -719,6 +721,30 @@ async function loadRtspStatus() {
         if (data.mqtt.host && document.getElementById("cfg-mqtt-host")) document.getElementById("cfg-mqtt-host").value = data.mqtt.host;
         if (data.mqtt.port && document.getElementById("cfg-mqtt-port")) document.getElementById("cfg-mqtt-port").value = data.mqtt.port;
         if (data.mqtt.topic && document.getElementById("cfg-mqtt-topic")) document.getElementById("cfg-mqtt-topic").value = data.mqtt.topic;
+        if (document.getElementById("cfg-mqtt-user") && data.mqtt.user !== undefined) document.getElementById("cfg-mqtt-user").value = data.mqtt.user;
+      }
+    }
+
+    // Update MQTT Status Badge
+    const mqttBadge = document.getElementById("mqtt-status-badge");
+    if (mqttBadge && data.mqtt) {
+      if (!data.mqtt.enabled) {
+        mqttBadge.style.display = "none";
+      } else {
+        mqttBadge.style.display = "inline-block";
+        if (data.mqtt.connected) {
+          mqttBadge.className = "chip-tag matched";
+          mqttBadge.textContent = "MQTT Connected";
+          mqttBadge.title = `Connected to ${data.mqtt.host}:${data.mqtt.port}`;
+        } else if (data.mqtt.last_error) {
+          mqttBadge.className = "chip-tag unrecognized";
+          mqttBadge.textContent = "MQTT Auth Error";
+          mqttBadge.title = data.mqtt.last_error;
+        } else {
+          mqttBadge.className = "chip-tag";
+          mqttBadge.textContent = "MQTT Disconnected";
+          mqttBadge.title = "Connecting or offline";
+        }
       }
     }
   } catch (err) {
