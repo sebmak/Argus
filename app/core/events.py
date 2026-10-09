@@ -66,12 +66,19 @@ def dispatch_detection_event(event_data: Dict[str, Any]):
     # 1. Dispatch Webhook if configured
     webhook_url = settings.RTSP_WEBHOOK_URL
     if webhook_url:
-        try:
-            with httpx.Client(timeout=4.0) as client:
-                res = client.post(webhook_url, json=event_data)
-                logger.debug("Dispatched webhook to %s (HTTP %d)", webhook_url, res.status_code)
-        except Exception as e:
-            logger.warning("Failed to post detection webhook to %s: %s", webhook_url, e)
+        is_known = bool(event_data.get("match", False))
+        if settings.WEBHOOK_ONLY_KNOWN_FACES and not is_known:
+            logger.debug(
+                "Suppressing outgoing webhook for '%s': WEBHOOK_ONLY_KNOWN_FACES is enabled",
+                event_data.get("person_name", "Unknown")
+            )
+        else:
+            try:
+                with httpx.Client(timeout=4.0) as client:
+                    res = client.post(webhook_url, json=event_data)
+                    logger.debug("Dispatched webhook to %s (HTTP %d)", webhook_url, res.status_code)
+            except Exception as e:
+                logger.warning("Failed to post detection webhook to %s: %s", webhook_url, e)
 
     # 2. Dispatch to MQTT if enabled
     if settings.MQTT_ENABLED:

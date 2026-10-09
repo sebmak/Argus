@@ -303,6 +303,13 @@
               <label class="form-label">Outgoing Webhook URL</label>
               <input type="url" class="form-control" id="cfg-rtsp-webhook" placeholder="http://192.168.1.20:8123/api/webhook/face_alert">
             </div>
+            <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+              <div>
+                <label class="form-label" style="margin-bottom: 0; font-size: 0.85rem;">Only Webhook Known Faces</label>
+                <div style="font-size: 0.75rem; color: var(--text-dim);">Suppress webhooks for strangers / unknowns</div>
+              </div>
+              <input type="checkbox" id="cfg-webhook-only-known" style="cursor: pointer; transform: scale(1.2);">
+            </div>
 
             <!-- MQTT Section -->
             <div style="border-top: 1px solid var(--border-subtle); padding-top: 1rem; margin-top: 1rem;">
@@ -535,6 +542,18 @@ action:
               <label class="form-label" for="set-webhook-url">Outgoing Notification Webhook URL</label>
               <input type="url" class="form-control" id="set-webhook-url" placeholder="http://192.168.1.20:8123/api/webhook/face_alert">
               <span class="setting-hint">Target endpoint to receive POST events containing face matches, bounding boxes, and crop thumbnails.</span>
+            </div>
+
+            <!-- Only Send Webhook for Known Faces Toggle -->
+            <div class="setting-item">
+              <div class="setting-label-row">
+                <label for="set-webhook-only-known">Only Dispatch Webhook for Known Faces</label>
+                <label class="switch">
+                  <input type="checkbox" id="set-webhook-only-known">
+                  <span class="slider-round"></span>
+                </label>
+              </div>
+              <span class="setting-hint">When enabled, outgoing webhooks are strictly dispatched for recognized household members and suppressed for strangers/unknown faces.</span>
             </div>
           </div>
 

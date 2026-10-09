@@ -248,6 +248,20 @@ curl -X POST http://<SERVER_IP>:8000/api/v1/protect/webhook \
 | `DEFAULT_ADMIN_USER` | `admin` | Initial administrator username |
 | `DEFAULT_ADMIN_PASSWORD` | `admin123`| Initial administrator password |
 | `WEBHOOK_SECRET` | *(empty)* | Optional secret key verified via `X-Webhook-Secret` header |
+| `RTSP_ENABLED` | `false` | Auto-start real-time RTSP background worker on container boot |
+| `RTSP_URL` | *(empty)* | RTSP/RTSPS video feed URL |
+| `RTSP_CAMERA_NAME` | `Front Door RTSP` | Display label for camera source |
+| `RTSP_FPS` | `3.0` | Inference sampling frequency (2-5 FPS recommended) |
+| `RTSP_COOLDOWN_SECONDS` | `30` | Minimum seconds between repeat alerts for the same person |
+| `RTSP_WEBHOOK_URL` | *(empty)* | Outgoing webhook endpoint URL (e.g. Home Assistant webhook) |
+| `WEBHOOK_ONLY_KNOWN_FACES` | `false` | Restrict outgoing webhooks strictly to recognized household members (suppress for unknown faces) |
+| `NOTIFICATION_THRESHOLD` | `0.55` | Minimum similarity score required before firing an outgoing webhook/MQTT event |
+| `NOTIFY_ON_UNKNOWN` | `true` | Send outgoing notifications for unrecognized visitor faces |
+| `UNKNOWN_MIN_CONFIDENCE` | `0.60` | Minimum face confidence required for unknown alerts |
+| `MQTT_ENABLED` | `false` | Publish real-time detection JSON events to an MQTT broker |
+| `MQTT_HOST` | *(empty)* | MQTT broker IP or hostname |
+| `MQTT_PORT` | `1883` | MQTT broker port |
+| `MQTT_TOPIC` | `facedetection/events` | Base topic for MQTT events |
 
 ---
 

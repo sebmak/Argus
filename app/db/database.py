@@ -8,6 +8,9 @@ from pathlib import Path
 try:
     import numpy as np
 except ImportError:
+# Rules for _DummyNumpy class:
+# 1. Variables and mock type attributes must be defined at the top of the class.
+# 2. Provides lightweight fallback type annotations when numpy is not installed on host.
     class _DummyNumpy:
         ndarray = Any
     np = _DummyNumpy()
@@ -398,6 +401,7 @@ DEFAULT_SETTINGS_MAP = {
     "rtsp_fps": lambda: str(settings.RTSP_FPS),
     "rtsp_cooldown_seconds": lambda: str(settings.RTSP_COOLDOWN_SECONDS),
     "rtsp_webhook_url": lambda: settings.RTSP_WEBHOOK_URL,
+    "webhook_only_known_faces": lambda: "true" if settings.WEBHOOK_ONLY_KNOWN_FACES else "false",
     "mqtt_enabled": lambda: "true" if settings.MQTT_ENABLED else "false",
     "mqtt_host": lambda: settings.MQTT_HOST,
     "mqtt_port": lambda: str(settings.MQTT_PORT),
@@ -450,6 +454,7 @@ def get_all_settings() -> Dict[str, Any]:
         "rtsp_fps": float(raw.get("rtsp_fps", settings.RTSP_FPS)),
         "rtsp_cooldown_seconds": int(raw.get("rtsp_cooldown_seconds", settings.RTSP_COOLDOWN_SECONDS)),
         "rtsp_webhook_url": raw.get("rtsp_webhook_url", settings.RTSP_WEBHOOK_URL),
+        "webhook_only_known_faces": raw.get("webhook_only_known_faces", "false").lower() in ("true", "1", "yes"),
         "mqtt_enabled": raw.get("mqtt_enabled", "false").lower() in ("true", "1", "yes"),
         "mqtt_host": raw.get("mqtt_host", settings.MQTT_HOST),
         "mqtt_port": int(raw.get("mqtt_port", settings.MQTT_PORT)),
@@ -504,6 +509,8 @@ def sync_settings_to_runtime():
             settings.RTSP_COOLDOWN_SECONDS = int(raw["rtsp_cooldown_seconds"])
         if "rtsp_webhook_url" in raw:
             settings.RTSP_WEBHOOK_URL = raw["rtsp_webhook_url"]
+        if "webhook_only_known_faces" in raw:
+            settings.WEBHOOK_ONLY_KNOWN_FACES = raw["webhook_only_known_faces"].lower() in ("true", "1", "yes")
         if "mqtt_enabled" in raw:
             settings.MQTT_ENABLED = raw["mqtt_enabled"].lower() in ("true", "1", "yes")
         if "mqtt_host" in raw:

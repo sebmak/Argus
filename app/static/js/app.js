@@ -617,6 +617,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const fps = parseFloat(document.getElementById("cfg-rtsp-fps").value) || 3.0;
       const cooldown_seconds = parseInt(document.getElementById("cfg-rtsp-cooldown").value) || 30;
       const webhook_url = document.getElementById("cfg-rtsp-webhook").value.trim();
+      const webhook_only_known_faces = document.getElementById("cfg-webhook-only-known") ? document.getElementById("cfg-webhook-only-known").checked : false;
       const mqtt_enabled = document.getElementById("cfg-mqtt-enabled").checked;
       const mqtt_host = document.getElementById("cfg-mqtt-host").value.trim();
       const mqtt_port = parseInt(document.getElementById("cfg-mqtt-port").value) || 1883;
@@ -626,7 +627,7 @@ document.addEventListener("DOMContentLoaded", () => {
         await apiFetch("/api/v1/rtsp/config", {
           method: "POST",
           body: JSON.stringify({
-            url, camera_name, fps, cooldown_seconds, webhook_url,
+            url, camera_name, fps, cooldown_seconds, webhook_url, webhook_only_known_faces,
             mqtt_enabled, mqtt_host, mqtt_port, mqtt_topic
           })
         });
@@ -710,6 +711,9 @@ async function loadRtspStatus() {
       if (data.target_fps && document.getElementById("cfg-rtsp-fps")) document.getElementById("cfg-rtsp-fps").value = data.target_fps;
       if (data.cooldown_seconds && document.getElementById("cfg-rtsp-cooldown")) document.getElementById("cfg-rtsp-cooldown").value = data.cooldown_seconds;
       if (data.webhook_url && document.getElementById("cfg-rtsp-webhook")) document.getElementById("cfg-rtsp-webhook").value = data.webhook_url;
+      if (document.getElementById("cfg-webhook-only-known") && data.webhook_only_known_faces !== undefined) {
+        document.getElementById("cfg-webhook-only-known").checked = !!data.webhook_only_known_faces;
+      }
       if (data.mqtt) {
         if (document.getElementById("cfg-mqtt-enabled")) document.getElementById("cfg-mqtt-enabled").checked = !!data.mqtt.enabled;
         if (data.mqtt.host && document.getElementById("cfg-mqtt-host")) document.getElementById("cfg-mqtt-host").value = data.mqtt.host;
@@ -802,6 +806,11 @@ async function loadSettings() {
     const webhookUrlInput = document.getElementById("set-webhook-url");
     if (webhookUrlInput && data.rtsp_webhook_url !== undefined) {
       webhookUrlInput.value = data.rtsp_webhook_url;
+    }
+
+    const webhookOnlyKnownCheck = document.getElementById("set-webhook-only-known");
+    if (webhookOnlyKnownCheck && data.webhook_only_known_faces !== undefined) {
+      webhookOnlyKnownCheck.checked = !!data.webhook_only_known_faces;
     }
 
     // MQTT Broker Integration
@@ -970,6 +979,7 @@ function setupSettingsForm() {
         rtsp_fps: parseFloat(document.getElementById("set-rtsp-fps").value) || 3.0,
         rtsp_cooldown_seconds: parseInt(document.getElementById("set-cooldown-seconds").value) || 30,
         rtsp_webhook_url: document.getElementById("set-webhook-url").value.trim(),
+        webhook_only_known_faces: document.getElementById("set-webhook-only-known").checked,
         mqtt_enabled: document.getElementById("set-mqtt-enabled").checked,
         mqtt_host: document.getElementById("set-mqtt-host").value.trim(),
         mqtt_port: parseInt(document.getElementById("set-mqtt-port").value) || 1883,

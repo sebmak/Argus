@@ -17,6 +17,9 @@ bcrypt_mock.hashpw.return_value = b"$2b$12$hashedpasswordmockmockmock"
 sys.modules["bcrypt"] = bcrypt_mock
 
 if "pydantic" not in sys.modules:
+    # Rules for DummyBaseModel class:
+    # 1. Variables and mock attributes must be defined at the top of the class.
+    # 2. Used as lightweight mock fallback when pydantic is unavailable in test environment.
     class DummyBaseModel:
         def __init__(self, **kwargs):
             for k, v in kwargs.items():
@@ -30,7 +33,13 @@ if "pydantic" not in sys.modules:
 
 from app.core.rtsp_worker import RtspStreamWorker
 
+# Rules for TestRtspWorker class:
+# 1. Variables and worker references must be declared at the top of the class.
+# 2. Tests verify streaming status reporting, cooldown suppression, inference rate limiting, and webhook event dispatching.
+# 3. Mocks are isolated per test method to prevent state leakage.
 class TestRtspWorker(unittest.TestCase):
+    worker: RtspStreamWorker = None
+
     def setUp(self):
         self.worker = RtspStreamWorker()
         self.worker.cooldown_seconds = 10
@@ -194,6 +203,52 @@ class TestRtspWorker(unittest.TestCase):
         self.worker._process_frame(MagicMock())
         mock_dispatch.assert_called_once()
         self.assertIn("unknown", self.worker.cooldowns)
+
+    @patch("httpx.Client")
+    def test_webhook_only_known_faces_filtering(self, mock_httpx_cls):
+        from app.config import settings
+        from app.core.events import dispatch_detection_event
+
+        mock_client = MagicMock()
+        mock_httpx_cls.return_value.__enter__.return_value = mock_client
+        mock_post = mock_client.post
+
+        settings.RTSP_WEBHOOK_URL = "http://example.com/webhook"
+        settings.MQTT_ENABLED = False
+
+        known_event = {
+            "event": "face_detection",
+            "match": True,
+            "person_name": "Alice",
+            "similarity": 0.88
+        }
+        unknown_event = {
+            "event": "face_detection",
+            "match": False,
+            "person_name": "Unknown",
+            "similarity": 0.20
+        }
+
+        # Scenario 1: WEBHOOK_ONLY_KNOWN_FACES is True
+        settings.WEBHOOK_ONLY_KNOWN_FACES = True
+
+        # Unknown face -> Suppressed
+        mock_post.reset_mock()
+        dispatch_detection_event(unknown_event)
+        mock_post.assert_not_called()
+
+        # Known face -> Sent
+        mock_post.reset_mock()
+        dispatch_detection_event(known_event)
+        mock_post.assert_called_once_with("http://example.com/webhook", json=known_event)
+
+        # Scenario 2: WEBHOOK_ONLY_KNOWN_FACES is False
+        settings.WEBHOOK_ONLY_KNOWN_FACES = False
+
+        # Unknown face -> Sent
+        mock_post.reset_mock()
+        dispatch_detection_event(unknown_event)
+        mock_post.assert_called_once_with("http://example.com/webhook", json=unknown_event)
 
 if __name__ == "__main__":
     unittest.main()

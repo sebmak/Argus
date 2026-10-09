@@ -9,12 +9,17 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/rtsp", tags=["RTSP Live Stream"])
 
+# Rules for RtspConfigRequest class:
+# 1. Variables and payload schema fields must be declared at the top of the class.
+# 2. All configuration fields must be optional to support partial updates.
+# 3. Numeric constraints must ensure valid operating ranges for FPS and alert cooldowns.
 class RtspConfigRequest(BaseModel):
     url: Optional[str] = Field(None, description="RTSP / RTSPS stream URL")
     camera_name: Optional[str] = Field(None, description="Display name for camera")
     fps: Optional[float] = Field(None, ge=0.5, le=15.0, description="Inference sampling frequency (FPS)")
     cooldown_seconds: Optional[int] = Field(None, ge=1, le=3600, description="Cooldown per entity in seconds")
     webhook_url: Optional[str] = Field(None, description="Outgoing webhook URL")
+    webhook_only_known_faces: Optional[bool] = Field(None, description="Only dispatch outgoing webhooks when a recognized known face is matched")
     mqtt_enabled: Optional[bool] = Field(None, description="Enable or disable MQTT publishing")
     mqtt_host: Optional[str] = Field(None, description="MQTT broker host IP / hostname")
     mqtt_port: Optional[int] = Field(None, description="MQTT broker port (e.g. 1883)")
@@ -25,6 +30,7 @@ async def get_rtsp_status():
     """Returns the current state and telemetry of the RTSP worker thread."""
     status_data = rtsp_worker.get_status()
     status_data["webhook_url"] = settings.RTSP_WEBHOOK_URL
+    status_data["webhook_only_known_faces"] = settings.WEBHOOK_ONLY_KNOWN_FACES
     status_data["mqtt"] = {
         "enabled": settings.MQTT_ENABLED,
         "host": settings.MQTT_HOST,
@@ -64,6 +70,8 @@ async def update_rtsp_config(payload: RtspConfigRequest):
         updates["rtsp_cooldown_seconds"] = payload.cooldown_seconds
     if payload.webhook_url is not None:
         updates["rtsp_webhook_url"] = payload.webhook_url.strip()
+    if payload.webhook_only_known_faces is not None:
+        updates["webhook_only_known_faces"] = payload.webhook_only_known_faces
     if payload.mqtt_enabled is not None:
         updates["mqtt_enabled"] = payload.mqtt_enabled
     if payload.mqtt_host is not None:
@@ -84,6 +92,7 @@ async def update_rtsp_config(payload: RtspConfigRequest):
             "fps": settings.RTSP_FPS,
             "cooldown_seconds": settings.RTSP_COOLDOWN_SECONDS,
             "webhook_url": settings.RTSP_WEBHOOK_URL,
+            "webhook_only_known_faces": settings.WEBHOOK_ONLY_KNOWN_FACES,
             "mqtt_enabled": settings.MQTT_ENABLED,
             "mqtt_host": settings.MQTT_HOST,
             "mqtt_port": settings.MQTT_PORT,

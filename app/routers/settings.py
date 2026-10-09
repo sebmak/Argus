@@ -10,6 +10,10 @@ from ..core.rtsp_worker import rtsp_worker
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/settings", tags=["System Settings"])
 
+# Rules for SettingsUpdateRequest class:
+# 1. Variables and input schema fields must be declared at the top of the class.
+# 2. All settings fields must be optional to support partial updates.
+# 3. Numeric parameters must have valid bounds (e.g. ge, le) to guard against invalid engine configurations.
 class SettingsUpdateRequest(BaseModel):
     # Face Recognition
     detection_confidence: Optional[float] = Field(None, ge=0.05, le=1.0, description="Minimum face detection confidence (0.05-1.0)")
@@ -21,13 +25,14 @@ class SettingsUpdateRequest(BaseModel):
     ort_num_threads: Optional[int] = Field(None, ge=1, le=96, description="ONNX Runtime CPU threads")
     max_samples_per_person: Optional[int] = Field(None, ge=1, le=500, description="Maximum learned face embeddings per person")
 
-    # RTSP Camera Stream
+    # RTSP Camera Stream & Webhook
     rtsp_enabled: Optional[bool] = Field(None, description="Enable real-time background RTSP worker")
     rtsp_url: Optional[str] = Field(None, description="RTSP / RTSPS video stream URL")
     rtsp_camera_name: Optional[str] = Field(None, description="Display name for camera source")
     rtsp_fps: Optional[float] = Field(None, ge=0.5, le=15.0, description="Inference sampling frequency (FPS)")
     rtsp_cooldown_seconds: Optional[int] = Field(None, ge=1, le=3600, description="Cooldown per entity in seconds before repeating alert")
     rtsp_webhook_url: Optional[str] = Field(None, description="Outgoing webhook endpoint URL")
+    webhook_only_known_faces: Optional[bool] = Field(None, description="Only dispatch outgoing webhooks when a recognized/known face is matched")
 
     # MQTT Event Publishing
     mqtt_enabled: Optional[bool] = Field(None, description="Enable MQTT event publishing")
@@ -69,9 +74,15 @@ async def update_system_settings(payload: SettingsUpdateRequest) -> Dict[str, An
         "settings": updated
     }
 
+# Rules for MigrationRollbackRequest class:
+# 1. Variables and payload schema fields must be declared at the top of the class.
+# 2. target_version specifies the desired database schema version to safely roll back to.
 class MigrationRollbackRequest(BaseModel):
     target_version: str = Field("1.0.0", description="App version to roll back database schema to (e.g. 1.0.0)")
 
+# Rules for MigrationForwardRequest class:
+# 1. Variables and payload schema fields must be declared at the top of the class.
+# 2. target_version specifies the desired forward schema version or None for current app version.
 class MigrationForwardRequest(BaseModel):
     target_version: Optional[str] = Field(None, description="App version to roll forward database schema to (e.g. 1.1.0)")
 

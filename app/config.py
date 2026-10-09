@@ -23,6 +23,10 @@ def _resolve_config_dir() -> str:
         return "/config"
     return "./data"
 
+# Rules for Settings class:
+# 1. Variables and configuration properties must be declared at the top of the class.
+# 2. Defaults are read from environment variables with safe fallbacks.
+# 3. Dynamic runtime overrides are synchronized with the SQLite settings table without container restarts.
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "Household Face Detection API"
@@ -62,6 +66,7 @@ class Settings(BaseSettings):
     RTSP_FPS: float = float(os.getenv("RTSP_FPS", "3.0"))  # Real-time inference frequency (2-5 FPS recommended)
     RTSP_COOLDOWN_SECONDS: int = int(os.getenv("RTSP_COOLDOWN_SECONDS", "30"))  # Cooldown per person before repeating event
     RTSP_WEBHOOK_URL: str = os.getenv("RTSP_WEBHOOK_URL", "")  # Outgoing webhook URL (e.g. Home Assistant automation)
+    WEBHOOK_ONLY_KNOWN_FACES: bool = os.getenv("WEBHOOK_ONLY_KNOWN_FACES", os.getenv("RTSP_WEBHOOK_ONLY_KNOWN", "false")).lower() in ("true", "1", "yes")  # Restrict outgoing webhooks strictly to known faces
 
     # Event Notification Thresholds
     NOTIFICATION_THRESHOLD: float = float(os.getenv("NOTIFICATION_THRESHOLD", "0.55"))  # Min similarity score to emit alert
