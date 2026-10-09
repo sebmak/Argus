@@ -9,6 +9,7 @@ import {
   Camera,
   CheckCircle,
   Sparkles,
+  Layers,
   X
 } from 'lucide-react';
 import { apiFetch } from '../../api';
@@ -25,6 +26,7 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
   const [persons, setPersons] = useState<Person[]>([]);
   const [loading, setLoading] = useState(false);
   const [purging, setPurging] = useState(false);
+  const [deduplicating, setDeduplicating] = useState(false);
   const [activeDetection, setActiveDetection] = useState<Detection | null>(null);
 
   // Assign modal state
@@ -84,6 +86,26 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
       showToast(err.message || 'Failed to purge low-confidence detections', 'error');
     } finally {
       setPurging(false);
+    }
+  };
+
+  const handleDeduplicate = async () => {
+    if (!window.confirm('Combine consecutive detections within timeframe and keep only the highest confidence best-shots?')) {
+      return;
+    }
+    setDeduplicating(true);
+    try {
+      const res = await apiFetch<{ status: string; message: string; deleted_count: number; kept_count: number }>(
+        '/api/v1/detections/deduplicate',
+        { method: 'POST' }
+      );
+      showToast(res.message || `Deduplicated: merged ${res.deleted_count} duplicate frames`, 'success');
+      fetchQueue();
+      onAssignmentComplete();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to deduplicate detections', 'error');
+    } finally {
+      setDeduplicating(false);
     }
   };
 
@@ -172,6 +194,15 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
           >
             <Sparkles size={14} className={purging ? 'animate-spin' : ''} />
             <span>Clean False Positives</span>
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleDeduplicate}
+            disabled={deduplicating || loading || detections.length === 0}
+            title="Combine consecutive duplicate frames and keep highest confidence best-shots"
+          >
+            <Layers size={14} className={deduplicating ? 'animate-spin' : ''} />
+            <span>Combine Duplicates</span>
           </button>
           <button
             className="btn btn-secondary btn-sm"

@@ -16,7 +16,8 @@ from .face_engine import face_engine
 from .events import dispatch_detection_event
 from ..db.database import (
     get_all_active_embeddings,
-    record_detection
+    record_detection,
+    update_detection_best_shot
 )
 
 logger = logging.getLogger(__name__)
@@ -27,13 +28,25 @@ logger = logging.getLogger(__name__)
 # 3. get_status must return comprehensive telemetry including target_fps, actual_fps, and fps_actual for frontend compatibility.
 # 4. Stream frame acquisitions and inference must respect configured sampling rates and entity cooldowns.
 # 5. Filters out low-confidence faces and tiny non-face bounding boxes before inbox recording and alerts.
+# 6. Aggregates unknown face detections across a sliding timeframe window to record only the highest-confidence best shot.
 class RtspStreamWorker:
-    """
-    Dedicated background worker thread for real-time RTSP stream processing,
-    face detection, identity classification, and event notification dispatching.
-    """
+    thread: Optional[threading.Thread] = None
+    stop_event: threading.Event = threading.Event()
+    is_running: bool = False
+    is_connected: bool = False
+    url: str = ""
+    camera_name: str = ""
+    fps: float = 2.0
+    cooldown_seconds: int = 30
+    last_frame: Optional[Any] = None
+    last_detection: Optional[Dict[str, Any]] = None
+    last_error: str = ""
+    fps_actual: float = 0.0
+    cooldowns: Dict[str, float] = {}
+    unknown_tracks: List[Dict[str, Any]] = []
+
     def __init__(self):
-        self.thread: Optional[threading.Thread] = None
+        self.thread = None
         self.stop_event = threading.Event()
         self.is_running = False
         self.is_connected = False
@@ -42,13 +55,15 @@ class RtspStreamWorker:
         self.fps = settings.RTSP_FPS
         self.cooldown_seconds = settings.RTSP_COOLDOWN_SECONDS
         
-        self.last_frame: Optional[np.ndarray] = None
-        self.last_detection: Optional[Dict[str, Any]] = None
+        self.last_frame = None
+        self.last_detection = None
         self.last_error = ""
         self.fps_actual = 0.0
         
         # Cooldown map: entity_name -> timestamp of last event emission
-        self.cooldowns: Dict[str, float] = {}
+        self.cooldowns = {}
+        # Sliding aggregation window for unknown faces in view: keeps single best-shot
+        self.unknown_tracks = []
 
     def configure(
         self,
@@ -193,6 +208,13 @@ class RtspStreamWorker:
 
             known_persons = get_all_active_embeddings()
             now = time.time()
+            track_window = float(settings.UNRECOGNIZED_TRACK_WINDOW_SECONDS)
+
+            # Purge expired unrecognized face tracks (expired if unseen for > track_window or active for > 60s)
+            self.unknown_tracks = [
+                t for t in self.unknown_tracks
+                if (now - t["last_seen"] <= track_window) and (now - t.get("first_seen", now) <= max(track_window * 4, 60.0))
+            ]
 
             for det in detections:
                 box = getattr(det, "bbox", [])
@@ -201,11 +223,25 @@ class RtspStreamWorker:
                     box_h = abs(box[3] - box[1])
                     if box_w < 35 or box_h < 35:
                         logger.debug("Suppressing tiny RTSP detection: %dx%d (min 35x35)", box_w, box_h)
+                        if getattr(det, "thumbnail_filename", None):
+                            thumb_p = settings.thumbnails_path / det.thumbnail_filename
+                            if thumb_p.exists():
+                                try:
+                                    thumb_p.unlink()
+                                except Exception:
+                                    pass
                         continue
 
                 det_confidence = float(getattr(det, "confidence", 1.0))
                 if det_confidence < settings.DETECTION_CONFIDENCE:
                     logger.debug("Suppressing low-confidence face detection: %.2f < %.2f", det_confidence, settings.DETECTION_CONFIDENCE)
+                    if getattr(det, "thumbnail_filename", None):
+                        thumb_p = settings.thumbnails_path / det.thumbnail_filename
+                        if thumb_p.exists():
+                            try:
+                                thumb_p.unlink()
+                            except Exception:
+                                pass
                     continue
 
                 match_info = face_engine.match_face(
@@ -222,53 +258,141 @@ class RtspStreamWorker:
                         "Suppressing review inbox logging for low-confidence unknown face: %.2f < %.2f",
                         det_confidence, settings.UNKNOWN_MIN_CONFIDENCE
                     )
+                    if getattr(det, "thumbnail_filename", None):
+                        thumb_p = settings.thumbnails_path / det.thumbnail_filename
+                        if thumb_p.exists():
+                            try:
+                                thumb_p.unlink()
+                            except Exception:
+                                pass
                     continue
 
-                # Check cooldown: only fire event if last alert was > cooldown_seconds ago
-                last_alert_time = self.cooldowns.get(cooldown_key, 0.0)
-                if now - last_alert_time < self.cooldown_seconds:
-                    logger.debug("Suppressing event for '%s' due to active cooldown (%.1fs remaining)",
-                                 person_name, self.cooldown_seconds - (now - last_alert_time))
-                    continue
+                # -------------------------------------------------------------
+                # Handle UNKNOWN face detection aggregation
+                # -------------------------------------------------------------
+                if not match_info["match"]:
+                    matched_track = None
+                    for t in self.unknown_tracks:
+                        if t.get("camera_name") == self.camera_name:
+                            if getattr(det, "embedding", None) is not None and t.get("embedding") is not None:
+                                try:
+                                    sim = float(face_engine.cosine_similarity(det.embedding, t["embedding"]))
+                                except Exception:
+                                    sim = 0.0
+                                if sim >= settings.SIMILARITY_THRESHOLD:
+                                    matched_track = t
+                                    break
 
-                # 1. Record detection in SQLite database (for history & dashboard review queue)
-                det_status = "matched" if match_info["match"] else "unrecognized"
-                det_id = record_detection(
-                    thumbnail_path=det.thumbnail_filename,
-                    bbox=det.bbox,
-                    camera_id=self.camera_name,
-                    matched_person_id=match_info["person_id"],
-                    matched_name=match_info["name"] if match_info["match"] else None,
-                    similarity=match_info["similarity"],
-                    status=det_status,
-                    confidence=det_confidence
-                )
+                    if matched_track is not None:
+                        # Existing unknown face still in view during the track window
+                        matched_track["last_seen"] = now
+                        matched_track["frame_count"] = matched_track.get("frame_count", 1) + 1
 
-                # 2. Check configured notification threshold before firing alerts
-                should_notify = False
+                        if det_confidence > matched_track["best_confidence"]:
+                            old_thumb = matched_track.get("thumbnail_filename")
+                            if old_thumb and old_thumb != det.thumbnail_filename:
+                                old_path = settings.thumbnails_path / old_thumb
+                                if old_path.exists():
+                                    try:
+                                        old_path.unlink()
+                                    except Exception:
+                                        pass
 
-                if match_info["match"]:
-                    # Known person: similarity must reach or exceed notification threshold
-                    if match_info["similarity"] >= settings.NOTIFICATION_THRESHOLD:
-                        should_notify = True
-                    else:
-                        logger.debug(
-                            "Suppressing notification for '%s': similarity %.2f < threshold %.2f",
-                            person_name, match_info["similarity"], settings.NOTIFICATION_THRESHOLD
-                        )
-                else:
-                    # Unknown person: check notify toggle, external channel acceptance, and minimum confidence
+                            update_detection_best_shot(
+                                detection_id=matched_track["detection_id"],
+                                thumbnail_path=det.thumbnail_filename,
+                                bbox=det.bbox,
+                                confidence=det_confidence
+                            )
+                            logger.info(
+                                "Promoted higher confidence unknown face best-shot on %s: %.2f -> %.2f (id: %s)",
+                                self.camera_name, matched_track["best_confidence"], det_confidence, matched_track["detection_id"]
+                            )
+                            matched_track["best_confidence"] = det_confidence
+                            matched_track["thumbnail_filename"] = det.thumbnail_filename
+                            matched_track["embedding"] = det.embedding
+
+                            # Update live telemetry last_detection with improved thumbnail
+                            if self.last_detection and self.last_detection.get("detection_id") == matched_track["detection_id"]:
+                                self.last_detection["confidence"] = det_confidence
+                                self.last_detection["thumbnail_url"] = f"/api/v1/thumbnails/{det.thumbnail_filename}"
+                                self.last_detection["thumbnail_base64"] = det.thumbnail_base64
+                                self.last_detection["bbox"] = det.bbox
+                        else:
+                            # Lower confidence frame of same unknown face: delete duplicate crop
+                            if getattr(det, "thumbnail_filename", None):
+                                thumb_p = settings.thumbnails_path / det.thumbnail_filename
+                                if thumb_p.exists():
+                                    try:
+                                        thumb_p.unlink()
+                                    except Exception:
+                                        pass
+
+                        # Aggregated into existing track; suppress creating another DB row or duplicate alert
+                        continue
+
+                    # New unknown face track! Record in database
+                    det_id = record_detection(
+                        thumbnail_path=det.thumbnail_filename,
+                        bbox=det.bbox,
+                        camera_id=self.camera_name,
+                        matched_person_id=None,
+                        matched_name=None,
+                        similarity=match_info["similarity"],
+                        status="unrecognized",
+                        confidence=det_confidence
+                    )
+
+                    self.unknown_tracks.append({
+                        "detection_id": det_id,
+                        "camera_name": self.camera_name,
+                        "embedding": det.embedding,
+                        "best_confidence": det_confidence,
+                        "thumbnail_filename": det.thumbnail_filename,
+                        "first_seen": now,
+                        "last_seen": now,
+                        "frame_count": 1
+                    })
+
                     allow_unknown_external = (
                         (settings.RTSP_WEBHOOK_URL and not settings.WEBHOOK_ONLY_KNOWN_FACES) or
                         (settings.MQTT_ENABLED and not settings.MQTT_ONLY_KNOWN_FACES and not settings.WEBHOOK_ONLY_KNOWN_FACES)
                     )
-                    if settings.NOTIFY_ON_UNKNOWN and allow_unknown_external and det_confidence >= settings.UNKNOWN_MIN_CONFIDENCE:
-                        should_notify = True
-                    else:
-                        logger.debug(
-                            "Suppressing notification for Unknown face: notify_on_unknown=%s, allow_unknown_external=%s, confidence=%.2f (min=%.2f)",
-                            settings.NOTIFY_ON_UNKNOWN, allow_unknown_external, det_confidence, settings.UNKNOWN_MIN_CONFIDENCE
-                        )
+                    should_notify = (
+                        settings.NOTIFY_ON_UNKNOWN and
+                        allow_unknown_external and
+                        det_confidence >= settings.UNKNOWN_MIN_CONFIDENCE and
+                        (now - self.cooldowns.get("unknown", 0.0) >= self.cooldown_seconds)
+                    )
+
+                # -------------------------------------------------------------
+                # Handle KNOWN face detection
+                # -------------------------------------------------------------
+                else:
+                    last_alert_time = self.cooldowns.get(cooldown_key, 0.0)
+                    if now - last_alert_time < self.cooldown_seconds:
+                        logger.debug("Suppressing event for '%s' due to active cooldown (%.1fs remaining)",
+                                     person_name, self.cooldown_seconds - (now - last_alert_time))
+                        if getattr(det, "thumbnail_filename", None):
+                            thumb_p = settings.thumbnails_path / det.thumbnail_filename
+                            if thumb_p.exists():
+                                try:
+                                    thumb_p.unlink()
+                                except Exception:
+                                    pass
+                        continue
+
+                    det_id = record_detection(
+                        thumbnail_path=det.thumbnail_filename,
+                        bbox=det.bbox,
+                        camera_id=self.camera_name,
+                        matched_person_id=match_info["person_id"],
+                        matched_name=match_info["name"],
+                        similarity=match_info["similarity"],
+                        status="matched",
+                        confidence=det_confidence
+                    )
+                    should_notify = (match_info["similarity"] >= settings.NOTIFICATION_THRESHOLD)
 
                 if not should_notify:
                     continue
@@ -296,7 +420,7 @@ class RtspStreamWorker:
                 logger.info("Real-time RTSP detection alert: '%s' (similarity: %.2f) on %s",
                             person_name, match_info["similarity"], self.camera_name)
 
-                # 3. Dispatch to Webhook and MQTT
+                # Dispatch to Webhook and MQTT
                 dispatch_detection_event(event_payload)
 
         except Exception as e:

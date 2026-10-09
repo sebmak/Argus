@@ -65,6 +65,7 @@ export interface SystemSettings {
   det_size: number;
   ort_num_threads: number;
   max_samples_per_person: number;
+  unrecognized_track_window_seconds?: number;
   rtsp_enabled: boolean;
   rtsp_url: string;
   rtsp_camera_name: string;

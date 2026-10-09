@@ -408,6 +408,114 @@ def purge_low_confidence_detections(min_confidence: float = 0.65) -> Dict[str, A
         "threshold": min_confidence
     }
 
+def update_detection_best_shot(
+    detection_id: str,
+    thumbnail_path: str,
+    bbox: List[int],
+    confidence: float
+) -> bool:
+    """Updates an existing detection with a higher-confidence best-shot thumbnail and bbox."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE detections
+            SET thumbnail_path = ?, bbox = ?, confidence = ?, timestamp = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (thumbnail_path, json.dumps(bbox), float(confidence), detection_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+def deduplicate_unrecognized_detections(time_window_seconds: int = 20) -> Dict[str, Any]:
+    """
+    Combines consecutive unrecognized detections within time_window_seconds per camera,
+    keeping only the single highest-confidence best-shot and deleting redundant duplicate frames
+    and their orphaned thumbnails.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, camera_id, timestamp, thumbnail_path, confidence, created_at
+            FROM detections
+            WHERE status = 'unrecognized'
+            ORDER BY camera_id ASC, timestamp ASC, id ASC
+        """)
+        rows = [dict(r) for r in cursor.fetchall()]
+
+        if not rows:
+            return {"deleted_count": 0, "kept_count": 0, "deleted_files": 0, "window_seconds": time_window_seconds}
+
+        def parse_ts(ts_str: str) -> float:
+            try:
+                dt = datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S")
+                return dt.timestamp()
+            except Exception:
+                return 0.0
+
+        clusters = []
+        current_cluster = []
+
+        for row in rows:
+            row["ts_float"] = parse_ts(row["timestamp"])
+            row["conf_float"] = float(row["confidence"]) if row.get("confidence") is not None else 0.0
+
+            if not current_cluster:
+                current_cluster.append(row)
+                continue
+
+            prev = current_cluster[-1]
+            same_cam = (row["camera_id"] == prev["camera_id"])
+            time_diff = abs(row["ts_float"] - prev["ts_float"])
+
+            if same_cam and time_diff <= time_window_seconds:
+                current_cluster.append(row)
+            else:
+                clusters.append(current_cluster)
+                current_cluster = [row]
+
+        if current_cluster:
+            clusters.append(current_cluster)
+
+        deleted_ids = []
+        deleted_files = 0
+        kept_count = 0
+
+        for cluster in clusters:
+            if len(cluster) == 1:
+                kept_count += 1
+                continue
+
+            # Pick the detection with the highest confidence
+            best = max(cluster, key=lambda d: d["conf_float"])
+            kept_count += 1
+
+            for item in cluster:
+                if item["id"] != best["id"]:
+                    deleted_ids.append(item["id"])
+                    thumb = item.get("thumbnail_path")
+                    if thumb and thumb != best.get("thumbnail_path"):
+                        thumb_file = settings.thumbnails_path / thumb
+                        try:
+                            if thumb_file.exists():
+                                thumb_file.unlink()
+                                deleted_files += 1
+                        except Exception as e:
+                            logger.debug("Could not remove duplicate thumbnail %s: %s", thumb, e)
+
+        if deleted_ids:
+            chunk_size = 500
+            for i in range(0, len(deleted_ids), chunk_size):
+                chunk = deleted_ids[i:i + chunk_size]
+                placeholders = ",".join("?" for _ in chunk)
+                cursor.execute(f"DELETE FROM detections WHERE id IN ({placeholders})", chunk)
+            conn.commit()
+
+        return {
+            "deleted_count": len(deleted_ids),
+            "kept_count": kept_count,
+            "deleted_files": deleted_files,
+            "window_seconds": time_window_seconds
+        }
+
 def assign_detection_to_person(detection_id: str, person_id: str) -> bool:
     """Mark an unrecognized detection as assigned to a person."""
     with get_db() as conn:
@@ -520,6 +628,7 @@ DEFAULT_SETTINGS_MAP = {
     "rtsp_fps": lambda: str(settings.RTSP_FPS),
     "rtsp_cooldown_seconds": lambda: str(settings.RTSP_COOLDOWN_SECONDS),
     "rtsp_webhook_url": lambda: settings.RTSP_WEBHOOK_URL,
+    "unrecognized_track_window_seconds": lambda: str(settings.UNRECOGNIZED_TRACK_WINDOW_SECONDS),
     "webhook_only_known_faces": lambda: "true" if settings.WEBHOOK_ONLY_KNOWN_FACES else "false",
     "mqtt_only_known_faces": lambda: "true" if settings.MQTT_ONLY_KNOWN_FACES else "false",
     "mqtt_enabled": lambda: "true" if settings.MQTT_ENABLED else "false",
@@ -604,6 +713,7 @@ def get_all_settings() -> Dict[str, Any]:
         "rtsp_fps": float(raw.get("rtsp_fps", settings.RTSP_FPS)),
         "rtsp_cooldown_seconds": int(raw.get("rtsp_cooldown_seconds", settings.RTSP_COOLDOWN_SECONDS)),
         "rtsp_webhook_url": raw.get("rtsp_webhook_url", settings.RTSP_WEBHOOK_URL),
+        "unrecognized_track_window_seconds": int(raw.get("unrecognized_track_window_seconds", settings.UNRECOGNIZED_TRACK_WINDOW_SECONDS)),
         "webhook_only_known_faces": raw.get("webhook_only_known_faces", "true" if settings.WEBHOOK_ONLY_KNOWN_FACES else "false").lower() in ("true", "1", "yes"),
         "mqtt_only_known_faces": raw.get("mqtt_only_known_faces", "true" if settings.MQTT_ONLY_KNOWN_FACES else "false").lower() in ("true", "1", "yes"),
         "mqtt_enabled": raw.get("mqtt_enabled", "false").lower() in ("true", "1", "yes"),
@@ -665,6 +775,8 @@ def sync_settings_to_runtime():
             settings.RTSP_COOLDOWN_SECONDS = int(raw["rtsp_cooldown_seconds"])
         if "rtsp_webhook_url" in raw:
             settings.RTSP_WEBHOOK_URL = raw["rtsp_webhook_url"]
+        if "unrecognized_track_window_seconds" in raw:
+            settings.UNRECOGNIZED_TRACK_WINDOW_SECONDS = int(raw["unrecognized_track_window_seconds"])
         if "webhook_only_known_faces" in raw:
             settings.WEBHOOK_ONLY_KNOWN_FACES = raw["webhook_only_known_faces"].lower() in ("true", "1", "yes")
         if "mqtt_only_known_faces" in raw:

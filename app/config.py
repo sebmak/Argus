@@ -30,7 +30,7 @@ def _resolve_config_dir() -> str:
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "Household Face Detection API"
-    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.8")
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.9")
     DEBUG: bool = False
 
     # Storage & Unraid Config Paths
@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.45"))
     DETECTION_CONFIDENCE: float = float(os.getenv("DETECTION_CONFIDENCE", "0.60"))
     MAX_SAMPLES_PER_PERSON: int = int(os.getenv("MAX_SAMPLES_PER_PERSON", "50"))
+    UNRECOGNIZED_TRACK_WINDOW_SECONDS: int = int(os.getenv("UNRECOGNIZED_TRACK_WINDOW_SECONDS", "15"))
     
     # Latency & Hardware Optimization Settings (Crucial for high core-count servers)
     DET_SIZE: int = int(os.getenv("DET_SIZE", "320"))  # 320 for ultra-fast (~20-50ms), 480 for balanced, 640 for max range

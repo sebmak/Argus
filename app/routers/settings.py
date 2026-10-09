@@ -24,6 +24,7 @@ class SettingsUpdateRequest(BaseModel):
     det_size: Optional[int] = Field(None, description="InsightFace detector input size (e.g. 320, 480, 640)")
     ort_num_threads: Optional[int] = Field(None, ge=1, le=96, description="ONNX Runtime CPU threads")
     max_samples_per_person: Optional[int] = Field(None, ge=1, le=500, description="Maximum learned face embeddings per person")
+    unrecognized_track_window_seconds: Optional[int] = Field(None, ge=1, le=300, description="Sliding window in seconds to aggregate unknown face detections into a single best-shot")
 
     # RTSP Camera Stream & Webhook
     rtsp_enabled: Optional[bool] = Field(None, description="Enable real-time background RTSP worker")

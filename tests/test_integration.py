@@ -45,7 +45,9 @@ from app.db.database import (
     verify_user_credentials,
     get_all_settings,
     update_setting,
-    sync_settings_to_runtime
+    sync_settings_to_runtime,
+    deduplicate_unrecognized_detections,
+    update_detection_best_shot
 )
 from app.core.face_engine import FaceEngine
 from app.core.webhook_parser import parse_protect_webhook, WebhookPayload
@@ -61,7 +63,7 @@ from app.db.migrations import (
 # ==============================================================================
 # Rules for TestEndToEndSystemIntegration:
 # 1. Tests complete lifecycle: migrations, authentication, enrollment, matching,
-#    notification suppression for unknown detections, inbox triage, runtime settings,
+#    notification suppression for unknown detections, inbox triage, deduplication, runtime settings,
 #    and rollback safety.
 # 2. Member variables must be declared at the top of the class.
 # 3. Uses isolated temporary test directory and cleans up upon completion.
@@ -343,6 +345,43 @@ class TestEndToEndSystemIntegration(unittest.TestCase):
         self.assertEqual(res_up["status"], "success")
         self.assertEqual(res_up["current_app_version"], "1.1.0")
         self.assertIn("dynamic_settings_and_telemetry", res_up["applied"])
+
+    def test_09_unrecognized_deduplication_and_best_shot(self):
+        """Test deduplicating burst unrecognized frames into highest confidence best-shots."""
+        # 1. Insert multiple unknown frames recorded within the same timeframe on Backyard camera
+        id1 = record_detection(
+            thumbnail_path="unk_shot_1.jpg",
+            bbox=[15, 15, 80, 80],
+            camera_id="Backyard",
+            status="unrecognized",
+            confidence=0.69
+        )
+        id2 = record_detection(
+            thumbnail_path="unk_shot_2_best.jpg",
+            bbox=[18, 18, 90, 90],
+            camera_id="Backyard",
+            status="unrecognized",
+            confidence=0.97
+        )
+        id3 = record_detection(
+            thumbnail_path="unk_shot_3.jpg",
+            bbox=[15, 15, 80, 80],
+            camera_id="Backyard",
+            status="unrecognized",
+            confidence=0.73
+        )
+
+        # 2. Run deduplication
+        dedup_res = deduplicate_unrecognized_detections(time_window_seconds=20)
+        self.assertGreaterEqual(dedup_res["deleted_count"], 2)
+
+        # 3. Verify Backyard has exactly 1 remaining detection with highest confidence (0.97)
+        queue = get_unrecognized_detections()
+        backyard_queue = [d for d in queue if d["camera_id"] == "Backyard"]
+        self.assertEqual(len(backyard_queue), 1)
+        self.assertEqual(backyard_queue[0]["id"], id2)
+        self.assertEqual(backyard_queue[0]["thumbnail_path"], "unk_shot_2_best.jpg")
+        self.assertEqual(backyard_queue[0]["confidence"], 0.97)
 
 
 if __name__ == "__main__":

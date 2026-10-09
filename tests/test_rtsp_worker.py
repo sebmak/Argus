@@ -35,7 +35,7 @@ from app.core.rtsp_worker import RtspStreamWorker
 
 # Rules for TestRtspWorker class:
 # 1. Variables and worker references must be declared at the top of the class.
-# 2. Tests verify streaming status reporting, cooldown suppression, inference rate limiting, and webhook event dispatching.
+# 2. Tests verify streaming status reporting, cooldown suppression, inference rate limiting, webhook event dispatching, and unknown track best-shot aggregation.
 # 3. Mocks are isolated per test method to prevent state leakage.
 class TestRtspWorker(unittest.TestCase):
     worker: RtspStreamWorker = None
@@ -198,10 +198,12 @@ class TestRtspWorker(unittest.TestCase):
 
         # Case 3: notify_on_unknown is True and confidence 0.75 >= 0.60 -> dispatched
         settings.NOTIFY_ON_UNKNOWN = True
+        settings.RTSP_WEBHOOK_URL = "http://example.com/webhook"
         settings.WEBHOOK_ONLY_KNOWN_FACES = False
         settings.MQTT_ONLY_KNOWN_FACES = False
         mock_det.confidence = 0.75
         self.worker.cooldowns.clear()
+        self.worker.unknown_tracks.clear()
 
         self.worker._process_frame(MagicMock())
         mock_dispatch.assert_called_once()
@@ -304,6 +306,81 @@ class TestRtspWorker(unittest.TestCase):
         mock_publish.reset_mock()
         dispatch_detection_event(unknown_event)
         mock_publish.assert_called_once()
+
+    @patch("app.core.rtsp_worker.update_detection_best_shot")
+    @patch("app.core.rtsp_worker.record_detection")
+    @patch("app.core.rtsp_worker.get_all_active_embeddings")
+    @patch("app.core.rtsp_worker.face_engine")
+    def test_sliding_window_unknown_face_aggregation(self, mock_engine, mock_get_emb, mock_record, mock_update):
+        from app.config import settings
+
+        mock_get_emb.return_value = {}
+        mock_record.return_value = "det_initial_1"
+        self.worker.unknown_tracks.clear()
+        self.worker.cooldowns.clear()
+
+        # Face engine returns cosine_similarity of 0.85 (same unknown person in scene)
+        mock_engine.cosine_similarity.return_value = 0.85
+        mock_engine.match_face.return_value = {
+            "match": False,
+            "person_id": None,
+            "name": "Unknown",
+            "similarity": 0.20,
+            "distance": 0.80
+        }
+
+        # Frame 1: First appearance of unknown face at 0.70 confidence
+        det1 = MagicMock()
+        det1.embedding = [0.1] * 512
+        det1.confidence = 0.70
+        det1.bbox = [10, 10, 100, 100]
+        det1.thumbnail_filename = "frame1.jpg"
+        det1.thumbnail_base64 = "base64_1"
+        mock_engine.detect_and_embed.return_value = [det1]
+
+        self.worker._process_frame(MagicMock())
+        self.assertEqual(mock_record.call_count, 1)
+        self.assertEqual(len(self.worker.unknown_tracks), 1)
+        self.assertEqual(self.worker.unknown_tracks[0]["best_confidence"], 0.70)
+        self.assertEqual(self.worker.unknown_tracks[0]["thumbnail_filename"], "frame1.jpg")
+
+        # Frame 2: Same face stays in view, but now higher confidence 0.95 (clear shot)
+        det2 = MagicMock()
+        det2.embedding = [0.1] * 512
+        det2.confidence = 0.95
+        det2.bbox = [12, 12, 105, 105]
+        det2.thumbnail_filename = "frame2_best.jpg"
+        det2.thumbnail_base64 = "base64_2"
+        mock_engine.detect_and_embed.return_value = [det2]
+
+        self.worker._process_frame(MagicMock())
+        # record_detection should NOT be called again (no duplicate queue item!)
+        self.assertEqual(mock_record.call_count, 1)
+        # update_detection_best_shot should be called to update the single item in-place
+        mock_update.assert_called_once_with(
+            detection_id="det_initial_1",
+            thumbnail_path="frame2_best.jpg",
+            bbox=[12, 12, 105, 105],
+            confidence=0.95
+        )
+        self.assertEqual(self.worker.unknown_tracks[0]["best_confidence"], 0.95)
+        self.assertEqual(self.worker.unknown_tracks[0]["thumbnail_filename"], "frame2_best.jpg")
+
+        # Frame 3: Same face stays in view, but lower confidence 0.72 (blurry shot)
+        det3 = MagicMock()
+        det3.embedding = [0.1] * 512
+        det3.confidence = 0.72
+        det3.bbox = [10, 10, 100, 100]
+        det3.thumbnail_filename = "frame3.jpg"
+        det3.thumbnail_base64 = "base64_3"
+        mock_engine.detect_and_embed.return_value = [det3]
+
+        self.worker._process_frame(MagicMock())
+        # Neither record_detection nor update_detection_best_shot should be called
+        self.assertEqual(mock_record.call_count, 1)
+        self.assertEqual(mock_update.call_count, 1)
+        # Track still retains the highest confidence 0.95 shot
+        self.assertEqual(self.worker.unknown_tracks[0]["best_confidence"], 0.95)
 
 if __name__ == "__main__":
     unittest.main()

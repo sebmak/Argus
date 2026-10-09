@@ -10,6 +10,7 @@ from ..db.database import (
     assign_detection_to_person,
     dismiss_detection,
     purge_low_confidence_detections,
+    deduplicate_unrecognized_detections,
     get_person_by_id,
     get_person_by_name,
     create_person,
@@ -128,5 +129,20 @@ async def clean_low_confidence_detections(threshold: Optional[float] = None):
     return {
         "status": "success",
         "message": f"Removed {result['deleted_count']} low-confidence detections (<{int(min_conf * 100)}%)",
+        **result
+    }
+
+@router.post("/deduplicate")
+async def deduplicate_detections(time_window_seconds: Optional[int] = None):
+    """
+    Combines consecutive unrecognized detections within a sliding timeframe window
+    for the same camera, keeping only the highest-confidence best-shot and purging
+    redundant duplicate frames and their thumbnail files.
+    """
+    window = time_window_seconds if time_window_seconds is not None else settings.UNRECOGNIZED_TRACK_WINDOW_SECONDS
+    result = deduplicate_unrecognized_detections(time_window_seconds=window)
+    return {
+        "status": "success",
+        "message": f"Deduplicated detections: merged {result['deleted_count']} frames into best-shots (window: {window}s)",
         **result
     }

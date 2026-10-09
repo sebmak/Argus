@@ -24,6 +24,7 @@ export const SettingsTab: React.FC = () => {
   const [detSize, setDetSize] = useState(320);
   const [ortThreads, setOrtThreads] = useState(8);
   const [maxSamples, setMaxSamples] = useState(25);
+  const [trackWindowSeconds, setTrackWindowSeconds] = useState(15);
 
   // Notification Thresholds
   const [notificationThreshold, setNotificationThreshold] = useState(0.65);
@@ -50,6 +51,7 @@ export const SettingsTab: React.FC = () => {
       if (settingsRes.det_size !== undefined) setDetSize(settingsRes.det_size);
       if (settingsRes.ort_num_threads !== undefined) setOrtThreads(settingsRes.ort_num_threads);
       if (settingsRes.max_samples_per_person !== undefined) setMaxSamples(settingsRes.max_samples_per_person);
+      if (settingsRes.unrecognized_track_window_seconds !== undefined) setTrackWindowSeconds(settingsRes.unrecognized_track_window_seconds);
 
       if (settingsRes.notification_threshold !== undefined) setNotificationThreshold(settingsRes.notification_threshold);
       if (settingsRes.notify_on_unknown !== undefined) setNotifyOnUnknown(settingsRes.notify_on_unknown);
@@ -79,6 +81,7 @@ export const SettingsTab: React.FC = () => {
         det_size: detSize,
         ort_num_threads: ortThreads,
         max_samples_per_person: maxSamples,
+        unrecognized_track_window_seconds: trackWindowSeconds,
         notification_threshold: notificationThreshold,
         notify_on_unknown: notifyOnUnknown,
         unknown_min_confidence: unknownMinConfidence,
@@ -265,6 +268,26 @@ export const SettingsTab: React.FC = () => {
                 onChange={e => setMaxSamples(parseInt(e.target.value, 10))}
                 style={{ width: '100%' }}
               />
+            </div>
+
+            {/* Unrecognized Face Aggregation Window */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <label className="form-label" style={{ margin: 0 }}>Review Aggregation Window</label>
+                <span className="chip chip-info" style={{ fontSize: '0.7rem' }}>{trackWindowSeconds} seconds</span>
+              </div>
+              <input
+                type="range"
+                min="5"
+                max="60"
+                step="5"
+                value={trackWindowSeconds}
+                onChange={e => setTrackWindowSeconds(parseInt(e.target.value, 10))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                Sliding timeframe to combine unknown face detections into a single highest-confidence review item.
+              </span>
             </div>
           </div>
 
