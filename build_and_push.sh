@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# build_and_push.sh
+# Automated Docker Build, Version Increment, and Local Registry Deployment
+# ==============================================================================
+set -euo pipefail
+
+# Configuration Defaults (can be overridden via environment variables)
+REGISTRY="${DOCKER_REGISTRY:-192.168.1.104:5000}"
+IMAGE_NAME="${DOCKER_IMAGE_NAME:-smakinson/facedetection}"
+PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
+VERSION_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.version"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ANSI Colors
+BOLD=$'\033[1m'
+GREEN=$'\033[0;32m'
+SKY=$'\033[0;36m'
+AMBER=$'\033[0;33m'
+ROSE=$'\033[0;31m'
+RESET=$'\033[0m'
+
+# Print Help
+show_help() {
+  cat << EOF
+${BOLD}Usage:${RESET} ./build_and_push.sh [OPTIONS] [VERSION]
+
+Builds, tags, and pushes FaceDetection Docker container to the local registry.
+
+${BOLD}Arguments:${RESET}
+  [VERSION]           Explicit version to release (e.g. 0.0.5). If omitted,
+                      the patch number in .version is automatically incremented.
+
+${BOLD}Options:${RESET}
+  --patch             Increment patch version (default: 0.0.4 -> 0.0.5)
+  --minor             Increment minor version (e.g. 0.0.4 -> 0.1.0)
+  --major             Increment major version (e.g. 0.0.4 -> 1.0.0)
+  --skip-frontend     Skip compiling frontend React assets with npm run build
+  --dry-run           Display commands and versions without executing docker
+  -h, --help          Show this help message
+
+${BOLD}Environment Variables:${RESET}
+  DOCKER_REGISTRY     Target registry (default: 192.168.1.104:5000)
+  DOCKER_IMAGE_NAME   Repository name (default: smakinson/facedetection)
+  DOCKER_PLATFORM     Target architecture (default: linux/amd64)
+
+EOF
+}
+
+# 1. Parse Arguments
+BUMP_TYPE="patch"
+EXPLICIT_VERSION=""
+SKIP_FRONTEND=false
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --patch)
+      BUMP_TYPE="patch"
+      shift
+      ;;
+    --minor)
+      BUMP_TYPE="minor"
+      shift
+      ;;
+    --major)
+      BUMP_TYPE="major"
+      shift
+      ;;
+    --skip-frontend)
+      SKIP_FRONTEND=true
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      if [[ -z "$EXPLICIT_VERSION" && "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+        EXPLICIT_VERSION="$1"
+        shift
+      else
+        echo -e "${ROSE}[!] Unknown option or argument: $1${RESET}" >&2
+        show_help
+        exit 1
+      fi
+      ;;
+  esac
+done
+
+# 2. Determine Current and Next Version
+if [[ ! -f "$VERSION_FILE" ]]; then
+  echo "0.0.4" > "$VERSION_FILE"
+fi
+
+CURRENT_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
+if [[ -z "$CURRENT_VERSION" ]]; then
+  CURRENT_VERSION="0.0.4"
+fi
+
+if [[ -n "$EXPLICIT_VERSION" ]]; then
+  NEW_VERSION="$EXPLICIT_VERSION"
+else
+  # Parse SemVer X.Y.Z
+  IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+  MAJOR="${MAJOR:-0}"
+  MINOR="${MINOR:-0}"
+  PATCH="${PATCH:-0}"
+
+  # Strip any prerelease suffix from patch number for arithmetic
+  PATCH_NUM="${PATCH%%-*}"
+
+  case "$BUMP_TYPE" in
+    major)
+      NEW_VERSION="$((MAJOR + 1)).0.0"
+      ;;
+    minor)
+      NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"
+      ;;
+    patch|*)
+      NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH_NUM + 1))"
+      ;;
+  esac
+fi
+
+echo -e "${BOLD}${SKY}======================================================${RESET}"
+echo -e "${BOLD}${SKY}  FaceEngine Docker Build & Push Pipeline${RESET}"
+echo -e "${BOLD}${SKY}======================================================${RESET}"
+echo -e "  Current Version:  ${AMBER}${CURRENT_VERSION}${RESET}"
+echo -e "  New Version:      ${GREEN}${NEW_VERSION}${RESET}"
+echo -e "  Target Registry:  ${SKY}${REGISTRY}/${IMAGE_NAME}${RESET}"
+echo -e "  Platform:         ${SKY}${PLATFORM}${RESET}"
+echo -e "${BOLD}${SKY}======================================================${RESET}\n"
+
+# 3. Compile React Frontend Assets
+if [ "$SKIP_FRONTEND" = false ]; then
+  if [ -d "$SCRIPT_DIR/frontend" ]; then
+    echo -e "${BOLD}[1/4] Building React frontend assets...${RESET}"
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [dry-run] (cd frontend && npm run build)"
+    else
+      (cd "$SCRIPT_DIR/frontend" && npm run build)
+      echo -e "${GREEN}✓ Frontend compiled to app/static/${RESET}\n"
+    fi
+  fi
+else
+  echo -e "${AMBER}[1/4] Skipping frontend compilation (--skip-frontend)${RESET}\n"
+fi
+
+# 4. Synchronize Version in app/config.py and .version
+echo -e "${BOLD}[2/4] Synchronizing version to ${NEW_VERSION}...${RESET}"
+if [ "$DRY_RUN" = false ]; then
+  echo "$NEW_VERSION" > "$VERSION_FILE"
+  # Update APP_VERSION in app/config.py
+  if [[ -f "$SCRIPT_DIR/app/config.py" ]]; then
+    sed -i '' "s/APP_VERSION: str = os.getenv(\"APP_VERSION\", \".*\")/APP_VERSION: str = os.getenv(\"APP_VERSION\", \"${NEW_VERSION}\")/" "$SCRIPT_DIR/app/config.py" || true
+  fi
+  echo -e "${GREEN}✓ Updated .version and app/config.py${RESET}\n"
+else
+  echo "  [dry-run] write ${NEW_VERSION} to .version and app/config.py"
+fi
+
+# 5. Build Docker Image
+echo -e "${BOLD}[3/4] Building Docker container (${PLATFORM})...${RESET}"
+CMD_BUILD="docker build --platform ${PLATFORM} -t ${IMAGE_NAME}:latest -t ${IMAGE_NAME}:${NEW_VERSION} \"${SCRIPT_DIR}\""
+
+if [ "$DRY_RUN" = true ]; then
+  echo "  [dry-run] $CMD_BUILD"
+else
+  eval "$CMD_BUILD"
+  echo -e "${GREEN}✓ Docker build successful${RESET}\n"
+fi
+
+# 6. Tag and Push to Registry
+REMOTE_VERSIONED="${REGISTRY}/${IMAGE_NAME}:${NEW_VERSION}"
+REMOTE_LATEST="${REGISTRY}/${IMAGE_NAME}:latest"
+
+echo -e "${BOLD}[4/4] Tagging and pushing to local registry...${RESET}"
+CMD_TAG_VERSION="docker image tag ${IMAGE_NAME}:latest ${REMOTE_VERSIONED}"
+CMD_TAG_LATEST="docker image tag ${IMAGE_NAME}:latest ${REMOTE_LATEST}"
+CMD_PUSH_VERSION="docker image push ${REMOTE_VERSIONED}"
+CMD_PUSH_LATEST="docker image push ${REMOTE_LATEST}"
+
+if [ "$DRY_RUN" = true ]; then
+  echo "  [dry-run] $CMD_TAG_VERSION"
+  echo "  [dry-run] $CMD_TAG_LATEST"
+  echo "  [dry-run] $CMD_PUSH_VERSION"
+  echo "  [dry-run] $CMD_PUSH_LATEST"
+else
+  echo -e "  Tagging ${REMOTE_VERSIONED}..."
+  eval "$CMD_TAG_VERSION"
+  eval "$CMD_TAG_LATEST"
+
+  echo -e "  Pushing ${REMOTE_VERSIONED}..."
+  eval "$CMD_PUSH_VERSION"
+
+  echo -e "  Pushing ${REMOTE_LATEST}..."
+  eval "$CMD_PUSH_LATEST"
+
+  echo -e "${GREEN}✓ Pushed to registry successfully${RESET}\n"
+fi
+
+echo -e "${BOLD}${GREEN}======================================================${RESET}"
+echo -e "${BOLD}${GREEN}  Deployment Complete!${RESET}"
+echo -e "${BOLD}${GREEN}======================================================${RESET}"
+echo -e "  Version: ${BOLD}${NEW_VERSION}${RESET}"
+echo -e "  Pull command:"
+echo -e "    ${SKY}docker pull ${REMOTE_VERSIONED}${RESET}"
+echo -e "  Or latest:"
+echo -e "    ${SKY}docker pull ${REMOTE_LATEST}${RESET}"
+echo -e "${BOLD}${GREEN}======================================================${RESET}"
