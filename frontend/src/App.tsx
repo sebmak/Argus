@@ -11,6 +11,7 @@ import { SandboxTab } from './components/tabs/SandboxTab';
 import { RtspTab } from './components/tabs/RtspTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
 import { GuideTab } from './components/tabs/GuideTab';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ScanFace } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
@@ -131,46 +132,48 @@ const MainAppContent: React.FC = () => {
 
       {/* Main Tab Content Container */}
       <main className="container">
-        {activeTab === 'overview' && (
-          <OverviewTab
-            stats={stats}
-            onNavigateTab={setActiveTab}
-            onAddMember={() => {
-              setActiveTab('persons');
-              setOpenAddMemberModal(true);
-            }}
-          />
-        )}
+        <ErrorBoundary fallbackTitle={`Error loading ${activeTab.toUpperCase()} tab`}>
+          {activeTab === 'overview' && (
+            <OverviewTab
+              stats={stats}
+              onNavigateTab={setActiveTab}
+              onAddMember={() => {
+                setActiveTab('persons');
+                setOpenAddMemberModal(true);
+              }}
+            />
+          )}
 
-        {activeTab === 'review' && (
-          <ReviewTab
-            onAssignmentComplete={fetchStats}
-          />
-        )}
+          {activeTab === 'review' && (
+            <ReviewTab
+              onAssignmentComplete={fetchStats}
+            />
+          )}
 
-        {activeTab === 'persons' && (
-          <PersonsTab
-            onRefreshStats={fetchStats}
-            openAddModal={openAddMemberModal}
-            onCloseAddModal={() => setOpenAddMemberModal(false)}
-          />
-        )}
+          {activeTab === 'persons' && (
+            <PersonsTab
+              onRefreshStats={fetchStats}
+              openAddModal={openAddMemberModal}
+              onCloseAddModal={() => setOpenAddMemberModal(false)}
+            />
+          )}
 
-        {activeTab === 'sandbox' && (
-          <SandboxTab />
-        )}
+          {activeTab === 'sandbox' && (
+            <SandboxTab />
+          )}
 
-        {activeTab === 'rtsp' && (
-          <RtspTab />
-        )}
+          {activeTab === 'rtsp' && (
+            <RtspTab />
+          )}
 
-        {activeTab === 'settings' && (
-          <SettingsTab />
-        )}
+          {activeTab === 'settings' && (
+            <SettingsTab />
+          )}
 
-        {activeTab === 'guide' && (
-          <GuideTab />
-        )}
+          {activeTab === 'guide' && (
+            <GuideTab />
+          )}
+        </ErrorBoundary>
       </main>
     </div>
   );

@@ -15,6 +15,11 @@ from ..db.database import (
 
 logger = logging.getLogger(__name__)
 
+# Rules for RtspStreamWorker class:
+# 1. Variables and worker state must be declared and initialized at the top of the class.
+# 2. Worker loop must run on a dedicated background daemon thread without blocking the FastAPI event loop.
+# 3. get_status must return comprehensive telemetry including target_fps, actual_fps, and fps_actual for frontend compatibility.
+# 4. Stream frame acquisitions and inference must respect configured sampling rates and entity cooldowns.
 class RtspStreamWorker:
     """
     Dedicated background worker thread for real-time RTSP stream processing,
@@ -95,6 +100,7 @@ class RtspStreamWorker:
             "camera_name": self.camera_name,
             "target_fps": self.fps,
             "actual_fps": round(self.fps_actual, 1),
+            "fps_actual": round(self.fps_actual, 1),
             "cooldown_seconds": self.cooldown_seconds,
             "last_detection": self.last_detection,
             "last_error": self.last_error,

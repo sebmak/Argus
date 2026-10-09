@@ -49,9 +49,11 @@ export const RtspTab: React.FC = () => {
     if (!silent) setLoading(true);
     try {
       const res = await apiFetch<RtspStatus>('/api/v1/rtsp/status');
-      setStatus(res);
-      setPreviewTimestamp(Date.now());
-      setPreviewError(false);
+      if (res && typeof res === 'object') {
+        setStatus(res);
+        setPreviewTimestamp(Date.now());
+        setPreviewError(false);
+      }
     } catch (err: any) {
       if (!silent) showToast(err.message || 'Failed to fetch RTSP status', 'error');
     } finally {
@@ -62,20 +64,24 @@ export const RtspTab: React.FC = () => {
   const fetchFullSettings = async () => {
     try {
       const res = await apiFetch<SystemSettings>('/api/v1/settings');
-      if (res.rtsp_url) setUrl(res.rtsp_url);
-      if (res.rtsp_camera_name) setCameraName(res.rtsp_camera_name);
-      if (res.rtsp_fps) setFps(res.rtsp_fps);
-      if (res.rtsp_cooldown_seconds) setCooldownSeconds(res.rtsp_cooldown_seconds);
-      if (res.rtsp_webhook_url) setWebhookUrl(res.rtsp_webhook_url);
-      setWebhookOnlyKnown(!!res.webhook_only_known_faces);
+      if (res) {
+        if (typeof res.rtsp_url === 'string') setUrl(res.rtsp_url);
+        if (typeof res.rtsp_camera_name === 'string') setCameraName(res.rtsp_camera_name);
+        if (typeof res.rtsp_fps === 'number' && !isNaN(res.rtsp_fps)) setFps(res.rtsp_fps);
+        if (typeof res.rtsp_cooldown_seconds === 'number' && !isNaN(res.rtsp_cooldown_seconds)) {
+          setCooldownSeconds(res.rtsp_cooldown_seconds);
+        }
+        if (typeof res.rtsp_webhook_url === 'string') setWebhookUrl(res.rtsp_webhook_url);
+        if (typeof res.webhook_only_known_faces === 'boolean') setWebhookOnlyKnown(res.webhook_only_known_faces);
 
-      setMqttEnabled(!!res.mqtt_enabled);
-      if (res.mqtt_host) setMqttHost(res.mqtt_host);
-      if (res.mqtt_port) setMqttPort(res.mqtt_port);
-      if (res.mqtt_topic) setMqttTopic(res.mqtt_topic);
-      if (res.mqtt_user) setMqttUser(res.mqtt_user);
-      if (res.mqtt_password) setMqttPassword(res.mqtt_password);
-    } catch (err) {
+        setMqttEnabled(!!res.mqtt_enabled);
+        if (typeof res.mqtt_host === 'string') setMqttHost(res.mqtt_host);
+        if (typeof res.mqtt_port === 'number') setMqttPort(res.mqtt_port);
+        if (typeof res.mqtt_topic === 'string') setMqttTopic(res.mqtt_topic);
+        if (typeof res.mqtt_user === 'string') setMqttUser(res.mqtt_user);
+        if (typeof res.mqtt_password === 'string') setMqttPassword(res.mqtt_password);
+      }
+    } catch {
       // Ignore
     }
   };
@@ -153,6 +159,14 @@ export const RtspTab: React.FC = () => {
 
   const isRunning = status?.is_running ?? false;
   const isConnected = status?.is_connected ?? false;
+
+  const actualFps = typeof status?.actual_fps === 'number'
+    ? status.actual_fps
+    : (typeof status?.fps_actual === 'number' ? status.fps_actual : 0.0);
+
+  const targetFps = typeof status?.target_fps === 'number'
+    ? status.target_fps
+    : (typeof fps === 'number' ? fps : 2.0);
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -239,7 +253,7 @@ export const RtspTab: React.FC = () => {
           <div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Actual Sampling FPS</div>
             <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'JetBrains Mono, monospace' }}>
-              {status ? `${status.fps_actual.toFixed(1)} / ${status.target_fps} fps` : '0.0 fps'}
+              {status ? `${actualFps.toFixed(1)} / ${targetFps.toFixed(1)} fps` : '0.0 fps'}
             </div>
           </div>
         </div>
@@ -365,14 +379,22 @@ export const RtspTab: React.FC = () => {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <span style={{ fontWeight: 700, fontSize: '1.05rem', color: '#fff' }}>
-                      {status.last_detection.person_name}
+                      {status.last_detection.person_name || 'Unknown Face'}
                     </span>
                     <span className={`chip ${status.last_detection.match ? 'chip-success' : 'chip-warning'}`} style={{ fontSize: '0.65rem' }}>
-                      {status.last_detection.match ? `${Math.round(status.last_detection.similarity * 100)}% match` : 'Unknown'}
+                      {status.last_detection.match
+                        ? `${Math.round((status.last_detection.similarity ?? 0) * 100)}% match`
+                        : 'Unknown'}
                     </span>
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                    Detected {new Date(status.last_detection.timestamp * 1000).toLocaleTimeString()}
+                    {status.last_detection.timestamp
+                      ? `Detected ${new Date(
+                          typeof status.last_detection.timestamp === 'number' && status.last_detection.timestamp < 1e11
+                            ? status.last_detection.timestamp * 1000
+                            : status.last_detection.timestamp
+                        ).toLocaleTimeString()}`
+                      : 'Recently detected'}
                   </div>
                 </div>
               </div>
@@ -429,7 +451,9 @@ export const RtspTab: React.FC = () => {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                   <label className="form-label" style={{ margin: 0 }}>Sampling Rate</label>
-                  <span className="chip chip-info" style={{ fontSize: '0.7rem' }}>{fps.toFixed(1)} FPS</span>
+                  <span className="chip chip-info" style={{ fontSize: '0.7rem' }}>
+                    {typeof fps === 'number' ? fps.toFixed(1) : Number(fps || 2).toFixed(1)} FPS
+                  </span>
                 </div>
                 <input
                   type="range"

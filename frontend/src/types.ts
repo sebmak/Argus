@@ -96,7 +96,8 @@ export interface RtspStatus {
   url: string;
   camera_name: string;
   target_fps: number;
-  fps_actual: number;
+  actual_fps?: number;
+  fps_actual?: number;
   last_error?: string | null;
   active_cooldowns?: Record<string, number>;
   last_detection?: {
