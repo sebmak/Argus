@@ -1,4 +1,5 @@
 import sqlite3
+import os
 import uuid
 import json
 import logging
@@ -402,6 +403,7 @@ DEFAULT_SETTINGS_MAP = {
     "rtsp_cooldown_seconds": lambda: str(settings.RTSP_COOLDOWN_SECONDS),
     "rtsp_webhook_url": lambda: settings.RTSP_WEBHOOK_URL,
     "webhook_only_known_faces": lambda: "true" if settings.WEBHOOK_ONLY_KNOWN_FACES else "false",
+    "mqtt_only_known_faces": lambda: "true" if settings.MQTT_ONLY_KNOWN_FACES else "false",
     "mqtt_enabled": lambda: "true" if settings.MQTT_ENABLED else "false",
     "mqtt_host": lambda: settings.MQTT_HOST,
     "mqtt_port": lambda: str(settings.MQTT_PORT),
@@ -436,6 +438,18 @@ def seed_default_settings():
             cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
             if not cursor.fetchone():
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(val_fn())))
+
+        # Synchronize container environment variables if explicitly defined in runtime environment
+        env_explicit_sync = {
+            "notify_on_unknown": "NOTIFY_ON_UNKNOWN",
+            "webhook_only_known_faces": "WEBHOOK_ONLY_KNOWN_FACES",
+            "mqtt_only_known_faces": "MQTT_ONLY_KNOWN_FACES"
+        }
+        for s_key, env_name in env_explicit_sync.items():
+            if env_name in os.environ:
+                env_val = os.environ[env_name].strip().lower()
+                bool_str = "true" if env_val in ("true", "1", "yes") else "false"
+                cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (s_key, bool_str))
         conn.commit()
     sync_settings_to_runtime()
 
@@ -472,7 +486,8 @@ def get_all_settings() -> Dict[str, Any]:
         "rtsp_fps": float(raw.get("rtsp_fps", settings.RTSP_FPS)),
         "rtsp_cooldown_seconds": int(raw.get("rtsp_cooldown_seconds", settings.RTSP_COOLDOWN_SECONDS)),
         "rtsp_webhook_url": raw.get("rtsp_webhook_url", settings.RTSP_WEBHOOK_URL),
-        "webhook_only_known_faces": raw.get("webhook_only_known_faces", "false").lower() in ("true", "1", "yes"),
+        "webhook_only_known_faces": raw.get("webhook_only_known_faces", "true" if settings.WEBHOOK_ONLY_KNOWN_FACES else "false").lower() in ("true", "1", "yes"),
+        "mqtt_only_known_faces": raw.get("mqtt_only_known_faces", "true" if settings.MQTT_ONLY_KNOWN_FACES else "false").lower() in ("true", "1", "yes"),
         "mqtt_enabled": raw.get("mqtt_enabled", "false").lower() in ("true", "1", "yes"),
         "mqtt_host": raw.get("mqtt_host", settings.MQTT_HOST),
         "mqtt_port": int(raw.get("mqtt_port", settings.MQTT_PORT)),
@@ -529,6 +544,8 @@ def sync_settings_to_runtime():
             settings.RTSP_WEBHOOK_URL = raw["rtsp_webhook_url"]
         if "webhook_only_known_faces" in raw:
             settings.WEBHOOK_ONLY_KNOWN_FACES = raw["webhook_only_known_faces"].lower() in ("true", "1", "yes")
+        if "mqtt_only_known_faces" in raw:
+            settings.MQTT_ONLY_KNOWN_FACES = raw["mqtt_only_known_faces"].lower() in ("true", "1", "yes")
         if "mqtt_enabled" in raw:
             settings.MQTT_ENABLED = raw["mqtt_enabled"].lower() in ("true", "1", "yes")
         if "mqtt_host" in raw:

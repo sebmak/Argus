@@ -29,7 +29,8 @@ export const SettingsTab: React.FC = () => {
   const [notificationThreshold, setNotificationThreshold] = useState(0.65);
   const [notifyOnUnknown, setNotifyOnUnknown] = useState(true);
   const [unknownMinConfidence, setUnknownMinConfidence] = useState(0.7);
-  const [webhookOnlyKnown, setWebhookOnlyKnown] = useState(false);
+  const [webhookOnlyKnown, setWebhookOnlyKnown] = useState(true);
+  const [mqttOnlyKnown, setMqttOnlyKnown] = useState(true);
 
   // Migration Telemetry & Rollback State
   const [migrationStatus, setMigrationStatus] = useState<MigrationStatus | null>(null);
@@ -54,6 +55,7 @@ export const SettingsTab: React.FC = () => {
       if (settingsRes.notify_on_unknown !== undefined) setNotifyOnUnknown(settingsRes.notify_on_unknown);
       if (settingsRes.unknown_min_confidence !== undefined) setUnknownMinConfidence(settingsRes.unknown_min_confidence);
       if (settingsRes.webhook_only_known_faces !== undefined) setWebhookOnlyKnown(settingsRes.webhook_only_known_faces);
+      if (settingsRes.mqtt_only_known_faces !== undefined) setMqttOnlyKnown(settingsRes.mqtt_only_known_faces);
 
       setMigrationStatus(migrationRes);
     } catch (err: any) {
@@ -80,7 +82,8 @@ export const SettingsTab: React.FC = () => {
         notification_threshold: notificationThreshold,
         notify_on_unknown: notifyOnUnknown,
         unknown_min_confidence: unknownMinConfidence,
-        webhook_only_known_faces: webhookOnlyKnown
+        webhook_only_known_faces: webhookOnlyKnown,
+        mqtt_only_known_faces: mqttOnlyKnown
       };
 
       await apiFetch('/api/v1/settings', {
@@ -337,6 +340,21 @@ export const SettingsTab: React.FC = () => {
               </label>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                 Restricts outgoing webhook events exclusively to verified household members.
+              </span>
+            </div>
+
+            {/* MQTT Only Known Faces */}
+            <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: '0.35rem' }}>
+                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>MQTT Only Known Faces</span>
+                <input
+                  type="checkbox"
+                  checked={mqttOnlyKnown}
+                  onChange={e => setMqttOnlyKnown(e.target.checked)}
+                />
+              </label>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Restricts MQTT detection events exclusively to verified household members.
               </span>
             </div>
 

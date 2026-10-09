@@ -82,6 +82,7 @@ class TestSettingsManagement(unittest.TestCase):
         self.assertIsInstance(all_settings["notify_on_unknown"], bool)
         self.assertIsInstance(all_settings["unknown_min_confidence"], float)
         self.assertIsInstance(all_settings["webhook_only_known_faces"], bool)
+        self.assertIsInstance(all_settings["mqtt_only_known_faces"], bool)
 
     def test_save_settings_bulk_and_runtime_sync(self):
         updates = {
@@ -98,7 +99,8 @@ class TestSettingsManagement(unittest.TestCase):
             "mqtt_enabled": True,
             "mqtt_host": "192.168.1.200",
             "mqtt_port": 1883,
-            "mqtt_topic": "home/cameras/gate"
+            "mqtt_topic": "home/cameras/gate",
+            "mqtt_only_known_faces": True
         }
 
         result = save_settings_bulk(updates)
@@ -117,6 +119,7 @@ class TestSettingsManagement(unittest.TestCase):
         self.assertTrue(result["mqtt_enabled"])
         self.assertEqual(result["mqtt_host"], "192.168.1.200")
         self.assertEqual(result["mqtt_topic"], "home/cameras/gate")
+        self.assertTrue(result["mqtt_only_known_faces"])
 
         # Verify active runtime settings singleton was immediately updated
         self.assertEqual(settings.DETECTION_CONFIDENCE, 0.65)
@@ -132,6 +135,22 @@ class TestSettingsManagement(unittest.TestCase):
         self.assertTrue(settings.MQTT_ENABLED)
         self.assertEqual(settings.MQTT_HOST, "192.168.1.200")
         self.assertEqual(settings.MQTT_TOPIC, "home/cameras/gate")
+        self.assertTrue(settings.MQTT_ONLY_KNOWN_FACES)
+
+    def test_env_var_override_sync_on_boot(self):
+        os.environ["NOTIFY_ON_UNKNOWN"] = "false"
+        os.environ["WEBHOOK_ONLY_KNOWN_FACES"] = "true"
+        os.environ["MQTT_ONLY_KNOWN_FACES"] = "true"
+
+        seed_default_settings()
+
+        self.assertFalse(settings.NOTIFY_ON_UNKNOWN)
+        self.assertTrue(settings.WEBHOOK_ONLY_KNOWN_FACES)
+        self.assertTrue(settings.MQTT_ONLY_KNOWN_FACES)
+
+        self.assertEqual(get_setting("notify_on_unknown"), "false")
+        self.assertEqual(get_setting("webhook_only_known_faces"), "true")
+        self.assertEqual(get_setting("mqtt_only_known_faces"), "true")
 
 if __name__ == "__main__":
     unittest.main()

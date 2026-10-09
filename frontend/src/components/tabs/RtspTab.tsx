@@ -31,7 +31,8 @@ export const RtspTab: React.FC = () => {
   const [fps, setFps] = useState(2.0);
   const [cooldownSeconds, setCooldownSeconds] = useState(30);
   const [webhookUrl, setWebhookUrl] = useState('');
-  const [webhookOnlyKnown, setWebhookOnlyKnown] = useState(false);
+  const [webhookOnlyKnown, setWebhookOnlyKnown] = useState(true);
+  const [mqttOnlyKnown, setMqttOnlyKnown] = useState(true);
 
   // MQTT Config
   const [mqttEnabled, setMqttEnabled] = useState(false);
@@ -73,6 +74,7 @@ export const RtspTab: React.FC = () => {
         }
         if (typeof res.rtsp_webhook_url === 'string') setWebhookUrl(res.rtsp_webhook_url);
         if (typeof res.webhook_only_known_faces === 'boolean') setWebhookOnlyKnown(res.webhook_only_known_faces);
+        if (typeof res.mqtt_only_known_faces === 'boolean') setMqttOnlyKnown(res.mqtt_only_known_faces);
 
         setMqttEnabled(!!res.mqtt_enabled);
         if (typeof res.mqtt_host === 'string') setMqttHost(res.mqtt_host);
@@ -140,7 +142,8 @@ export const RtspTab: React.FC = () => {
         mqtt_port: mqttPort,
         mqtt_topic: mqttTopic,
         mqtt_user: mqttUser || undefined,
-        mqtt_password: mqttPassword || undefined
+        mqtt_password: mqttPassword || undefined,
+        mqtt_only_known_faces: mqttOnlyKnown
       };
 
       await apiFetch('/api/v1/rtsp/config', {
@@ -607,6 +610,19 @@ export const RtspTab: React.FC = () => {
                         onChange={e => setMqttPassword(e.target.value)}
                       />
                     </div>
+                  </div>
+
+                  {/* Only Known Faces Checkbox */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={mqttOnlyKnown}
+                      onChange={e => setMqttOnlyKnown(e.target.checked)}
+                    />
+                    <span style={{ color: '#fff', fontWeight: 500 }}>Only publish MQTT events for recognized known faces</span>
+                  </label>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    When enabled, unrecognized faces will not be published to your MQTT topics.
                   </div>
                 </div>
               )}

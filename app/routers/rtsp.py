@@ -26,6 +26,7 @@ class RtspConfigRequest(BaseModel):
     mqtt_topic: Optional[str] = Field(None, description="MQTT publication topic")
     mqtt_user: Optional[str] = Field(None, description="MQTT broker username")
     mqtt_password: Optional[str] = Field(None, description="MQTT broker password")
+    mqtt_only_known_faces: Optional[bool] = Field(None, description="Only publish MQTT events when a recognized known face is matched")
 
 @router.get("/status")
 async def get_rtsp_status():
@@ -34,6 +35,7 @@ async def get_rtsp_status():
     status_data = rtsp_worker.get_status()
     status_data["webhook_url"] = settings.RTSP_WEBHOOK_URL
     status_data["webhook_only_known_faces"] = settings.WEBHOOK_ONLY_KNOWN_FACES
+    status_data["mqtt_only_known_faces"] = settings.MQTT_ONLY_KNOWN_FACES
     status_data["mqtt"] = get_mqtt_status()
     return status_data
 
@@ -82,6 +84,8 @@ async def update_rtsp_config(payload: RtspConfigRequest):
         updates["mqtt_user"] = payload.mqtt_user.strip()
     if payload.mqtt_password is not None:
         updates["mqtt_password"] = payload.mqtt_password
+    if payload.mqtt_only_known_faces is not None:
+        updates["mqtt_only_known_faces"] = payload.mqtt_only_known_faces
 
     save_settings_bulk(updates)
 
@@ -99,7 +103,8 @@ async def update_rtsp_config(payload: RtspConfigRequest):
             "mqtt_host": settings.MQTT_HOST,
             "mqtt_port": settings.MQTT_PORT,
             "mqtt_topic": settings.MQTT_TOPIC,
-            "mqtt_user": settings.MQTT_USER
+            "mqtt_user": settings.MQTT_USER,
+            "mqtt_only_known_faces": settings.MQTT_ONLY_KNOWN_FACES
         }
     }
 

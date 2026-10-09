@@ -41,6 +41,7 @@ class SettingsUpdateRequest(BaseModel):
     mqtt_topic: Optional[str] = Field(None, description="MQTT publication topic prefix")
     mqtt_user: Optional[str] = Field(None, description="MQTT broker username")
     mqtt_password: Optional[str] = Field(None, description="MQTT broker password")
+    mqtt_only_known_faces: Optional[bool] = Field(None, description="Only publish MQTT events when a recognized known face is matched")
 
 @router.get("")
 @router.get("/")

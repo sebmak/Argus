@@ -21,7 +21,8 @@ def get_mqtt_status() -> Dict[str, Any]:
         "topic": settings.MQTT_TOPIC,
         "user": settings.MQTT_USER,
         "connected": _mqtt_connected,
-        "last_error": _mqtt_last_error
+        "last_error": _mqtt_last_error,
+        "only_known_faces": settings.MQTT_ONLY_KNOWN_FACES
     }
 
 def get_mqtt_client():
@@ -103,15 +104,15 @@ def dispatch_detection_event(event_data: Dict[str, Any]):
     Runs synchronously or in worker thread.
     """
     payload_json = json.dumps(event_data)
+    is_known = bool(event_data.get("match", False))
 
     # 1. Dispatch Webhook if configured
     webhook_url = settings.RTSP_WEBHOOK_URL
     if webhook_url:
-        is_known = bool(event_data.get("match", False))
-        if settings.WEBHOOK_ONLY_KNOWN_FACES and not is_known:
+        if not is_known and (settings.WEBHOOK_ONLY_KNOWN_FACES or not settings.NOTIFY_ON_UNKNOWN):
             logger.debug(
-                "Suppressing outgoing webhook for '%s': WEBHOOK_ONLY_KNOWN_FACES is enabled",
-                event_data.get("person_name", "Unknown")
+                "Suppressing outgoing webhook for '%s': only known faces allowed (WEBHOOK_ONLY_KNOWN_FACES=%s, NOTIFY_ON_UNKNOWN=%s)",
+                event_data.get("person_name", "Unknown"), settings.WEBHOOK_ONLY_KNOWN_FACES, settings.NOTIFY_ON_UNKNOWN
             )
         else:
             try:
@@ -123,16 +124,22 @@ def dispatch_detection_event(event_data: Dict[str, Any]):
 
     # 2. Dispatch to MQTT if enabled
     if settings.MQTT_ENABLED:
-        try:
-            client = get_mqtt_client()
-            if client:
-                topic = settings.MQTT_TOPIC
-                client.publish(topic, payload_json, qos=0)
-                # Also publish to entity-specific topic if matched
-                person_name = event_data.get("person_name")
-                if person_name and person_name.lower() != "unknown":
-                    sub_topic = f"{topic}/{person_name.lower().replace(' ', '_')}"
-                    client.publish(sub_topic, payload_json, qos=0)
-                logger.debug("Published detection to MQTT topic: %s", topic)
-        except Exception as e:
-            logger.warning("Failed to publish detection to MQTT: %s", e)
+        if not is_known and (settings.MQTT_ONLY_KNOWN_FACES or settings.WEBHOOK_ONLY_KNOWN_FACES or not settings.NOTIFY_ON_UNKNOWN):
+            logger.debug(
+                "Suppressing MQTT publication for '%s': only known faces allowed (MQTT_ONLY_KNOWN_FACES=%s, NOTIFY_ON_UNKNOWN=%s)",
+                event_data.get("person_name", "Unknown"), settings.MQTT_ONLY_KNOWN_FACES, settings.NOTIFY_ON_UNKNOWN
+            )
+        else:
+            try:
+                client = get_mqtt_client()
+                if client:
+                    topic = settings.MQTT_TOPIC
+                    client.publish(topic, payload_json, qos=0)
+                    # Also publish to entity-specific topic if matched
+                    person_name = event_data.get("person_name")
+                    if person_name and person_name.lower() != "unknown":
+                        sub_topic = f"{topic}/{person_name.lower().replace(' ', '_')}"
+                        client.publish(sub_topic, payload_json, qos=0)
+                    logger.debug("Published detection to MQTT topic: %s", topic)
+            except Exception as e:
+                logger.warning("Failed to publish detection to MQTT: %s", e)

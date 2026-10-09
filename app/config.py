@@ -30,7 +30,7 @@ def _resolve_config_dir() -> str:
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "Household Face Detection API"
-    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.6")
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.7")
     DEBUG: bool = False
 
     # Storage & Unraid Config Paths
@@ -66,11 +66,11 @@ class Settings(BaseSettings):
     RTSP_FPS: float = float(os.getenv("RTSP_FPS", "3.0"))  # Real-time inference frequency (2-5 FPS recommended)
     RTSP_COOLDOWN_SECONDS: int = int(os.getenv("RTSP_COOLDOWN_SECONDS", "30"))  # Cooldown per person before repeating event
     RTSP_WEBHOOK_URL: str = os.getenv("RTSP_WEBHOOK_URL", "")  # Outgoing webhook URL (e.g. Home Assistant automation)
-    WEBHOOK_ONLY_KNOWN_FACES: bool = os.getenv("WEBHOOK_ONLY_KNOWN_FACES", os.getenv("RTSP_WEBHOOK_ONLY_KNOWN", "false")).lower() in ("true", "1", "yes")  # Restrict outgoing webhooks strictly to known faces
+    WEBHOOK_ONLY_KNOWN_FACES: bool = os.getenv("WEBHOOK_ONLY_KNOWN_FACES", os.getenv("RTSP_WEBHOOK_ONLY_KNOWN", "true")).lower() in ("true", "1", "yes")  # Restrict outgoing webhooks strictly to known faces
 
     # Event Notification Thresholds
     NOTIFICATION_THRESHOLD: float = float(os.getenv("NOTIFICATION_THRESHOLD", "0.55"))  # Min similarity score to emit alert
-    NOTIFY_ON_UNKNOWN: bool = os.getenv("NOTIFY_ON_UNKNOWN", "true").lower() in ("true", "1", "yes")  # Alert on unknown faces
+    NOTIFY_ON_UNKNOWN: bool = os.getenv("NOTIFY_ON_UNKNOWN", "false").lower() in ("true", "1", "yes")  # Alert on unknown faces
     UNKNOWN_MIN_CONFIDENCE: float = float(os.getenv("UNKNOWN_MIN_CONFIDENCE", "0.60"))  # Min confidence for unknown faces
 
     # MQTT Broker Event Notification Settings
@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     MQTT_USER: str = os.getenv("MQTT_USER", "")
     MQTT_PASSWORD: str = os.getenv("MQTT_PASSWORD", "")
     MQTT_TOPIC: str = os.getenv("MQTT_TOPIC", "facedetection/events")
+    MQTT_ONLY_KNOWN_FACES: bool = os.getenv("MQTT_ONLY_KNOWN_FACES", os.getenv("WEBHOOK_ONLY_KNOWN_FACES", "true")).lower() in ("true", "1", "yes")  # Restrict MQTT events strictly to known faces
 
     @property
     def config_path(self) -> Path:

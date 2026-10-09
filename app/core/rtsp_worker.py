@@ -229,13 +229,17 @@ class RtspStreamWorker:
                             person_name, match_info["similarity"], settings.NOTIFICATION_THRESHOLD
                         )
                 else:
-                    # Unknown person: check notify toggle and minimum face detection confidence
-                    if settings.NOTIFY_ON_UNKNOWN and det_confidence >= settings.UNKNOWN_MIN_CONFIDENCE:
+                    # Unknown person: check notify toggle, external channel acceptance, and minimum confidence
+                    allow_unknown_external = (
+                        (settings.RTSP_WEBHOOK_URL and not settings.WEBHOOK_ONLY_KNOWN_FACES) or
+                        (settings.MQTT_ENABLED and not settings.MQTT_ONLY_KNOWN_FACES and not settings.WEBHOOK_ONLY_KNOWN_FACES)
+                    )
+                    if settings.NOTIFY_ON_UNKNOWN and allow_unknown_external and det_confidence >= settings.UNKNOWN_MIN_CONFIDENCE:
                         should_notify = True
                     else:
                         logger.debug(
-                            "Suppressing notification for Unknown face: notify_on_unknown=%s, confidence=%.2f (min=%.2f)",
-                            settings.NOTIFY_ON_UNKNOWN, det_confidence, settings.UNKNOWN_MIN_CONFIDENCE
+                            "Suppressing notification for Unknown face: notify_on_unknown=%s, allow_unknown_external=%s, confidence=%.2f (min=%.2f)",
+                            settings.NOTIFY_ON_UNKNOWN, allow_unknown_external, det_confidence, settings.UNKNOWN_MIN_CONFIDENCE
                         )
 
                 if not should_notify:

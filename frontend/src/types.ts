@@ -78,6 +78,7 @@ export interface SystemSettings {
   mqtt_topic: string;
   mqtt_user?: string;
   mqtt_password?: string;
+  mqtt_only_known_faces?: boolean;
 }
 
 export interface MqttStatus {
@@ -88,6 +89,7 @@ export interface MqttStatus {
   user?: string;
   connected: boolean;
   last_error?: string | null;
+  only_known_faces?: boolean;
 }
 
 export interface RtspStatus {
@@ -109,6 +111,7 @@ export interface RtspStatus {
   } | null;
   webhook_url?: string;
   webhook_only_known_faces?: boolean;
+  mqtt_only_known_faces?: boolean;
   mqtt?: MqttStatus;
 }
 

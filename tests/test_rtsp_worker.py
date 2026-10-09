@@ -197,6 +197,9 @@ class TestRtspWorker(unittest.TestCase):
         mock_dispatch.assert_not_called()
 
         # Case 3: notify_on_unknown is True and confidence 0.75 >= 0.60 -> dispatched
+        settings.NOTIFY_ON_UNKNOWN = True
+        settings.WEBHOOK_ONLY_KNOWN_FACES = False
+        settings.MQTT_ONLY_KNOWN_FACES = False
         mock_det.confidence = 0.75
         self.worker.cooldowns.clear()
 
@@ -215,6 +218,7 @@ class TestRtspWorker(unittest.TestCase):
 
         settings.RTSP_WEBHOOK_URL = "http://example.com/webhook"
         settings.MQTT_ENABLED = False
+        settings.NOTIFY_ON_UNKNOWN = True
 
         known_event = {
             "event": "face_detection",
@@ -249,6 +253,57 @@ class TestRtspWorker(unittest.TestCase):
         mock_post.reset_mock()
         dispatch_detection_event(unknown_event)
         mock_post.assert_called_once_with("http://example.com/webhook", json=unknown_event)
+
+    @patch("app.core.events.get_mqtt_client")
+    def test_mqtt_only_known_faces_filtering(self, mock_get_client):
+        from app.config import settings
+        from app.core.events import dispatch_detection_event
+
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_publish = mock_client.publish
+
+        settings.MQTT_ENABLED = True
+        settings.MQTT_TOPIC = "facedetection/events"
+        settings.RTSP_WEBHOOK_URL = ""
+        settings.NOTIFY_ON_UNKNOWN = True
+
+        known_event = {
+            "event": "face_detection",
+            "match": True,
+            "person_name": "Bob",
+            "similarity": 0.90
+        }
+        unknown_event = {
+            "event": "face_detection",
+            "match": False,
+            "person_name": "Unknown",
+            "similarity": 0.15
+        }
+
+        # Scenario 1: MQTT_ONLY_KNOWN_FACES is True
+        settings.MQTT_ONLY_KNOWN_FACES = True
+        settings.WEBHOOK_ONLY_KNOWN_FACES = True
+
+        # Unknown face -> Suppressed on MQTT
+        mock_publish.reset_mock()
+        dispatch_detection_event(unknown_event)
+        mock_publish.assert_not_called()
+
+        # Known face -> Published on MQTT
+        mock_publish.reset_mock()
+        dispatch_detection_event(known_event)
+        self.assertEqual(mock_publish.call_count, 2)  # main topic + person subtopic
+
+        # Scenario 2: MQTT_ONLY_KNOWN_FACES is False, WEBHOOK_ONLY_KNOWN_FACES is False, NOTIFY_ON_UNKNOWN is True
+        settings.MQTT_ONLY_KNOWN_FACES = False
+        settings.WEBHOOK_ONLY_KNOWN_FACES = False
+        settings.NOTIFY_ON_UNKNOWN = True
+
+        # Unknown face -> Published
+        mock_publish.reset_mock()
+        dispatch_detection_event(unknown_event)
+        mock_publish.assert_called_once()
 
 if __name__ == "__main__":
     unittest.main()
