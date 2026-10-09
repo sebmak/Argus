@@ -180,6 +180,8 @@ class MigrationManager:
                             "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
                             (admin_id, settings.DEFAULT_ADMIN_USER, hash_password(settings.DEFAULT_ADMIN_PASSWORD))
                         )
+                if table_exists(conn, "detections") and not column_exists(conn, "detections", "confidence"):
+                    add_column_if_missing(conn, "detections", "confidence", "REAL", default="1.0")
                 conn.execute(
                     "INSERT OR IGNORE INTO schema_migrations (migration_id, app_version, name) VALUES (?, ?, ?)",
                     (1, "1.0.0", "initial_household_schema")

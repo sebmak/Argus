@@ -9,6 +9,7 @@ from ..db.database import (
     get_unrecognized_detections,
     assign_detection_to_person,
     dismiss_detection,
+    purge_low_confidence_detections,
     get_person_by_id,
     get_person_by_name,
     create_person,
@@ -20,6 +21,11 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/detections", tags=["Detections Queue"])
 
+# ==============================================================================
+# Rules for AssignDetectionRequest:
+# 1. Variables and data schema properties must be declared at the top of the class.
+# 2. Encapsulates request parameters for assigning detections to existing or new members.
+# ==============================================================================
 class AssignDetectionRequest(BaseModel):
     person_id: Optional[str] = Field(None, description="ID of existing person to assign to")
     new_person_name: Optional[str] = Field(None, description="Name for newly created person if not existing")
@@ -110,3 +116,17 @@ async def dismiss_unrecognized_detection(detection_id: str):
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found")
     return {"status": "success", "message": "Detection dismissed"}
+
+@router.post("/clean-low-confidence")
+async def clean_low_confidence_detections(threshold: Optional[float] = None):
+    """
+    Purge unrecognized detections with confidence below threshold.
+    Removes database records and deletes associated thumbnail files.
+    """
+    min_conf = threshold if threshold is not None else settings.UNKNOWN_MIN_CONFIDENCE
+    result = purge_low_confidence_detections(min_confidence=min_conf)
+    return {
+        "status": "success",
+        "message": f"Removed {result['deleted_count']} low-confidence detections (<{int(min_conf * 100)}%)",
+        **result
+    }

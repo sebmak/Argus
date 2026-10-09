@@ -8,6 +8,7 @@ import {
   Clock,
   Camera,
   CheckCircle,
+  Sparkles,
   X
 } from 'lucide-react';
 import { apiFetch } from '../../api';
@@ -23,6 +24,7 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
   const [detections, setDetections] = useState<Detection[]>([]);
   const [persons, setPersons] = useState<Person[]>([]);
   const [loading, setLoading] = useState(false);
+  const [purging, setPurging] = useState(false);
   const [activeDetection, setActiveDetection] = useState<Detection | null>(null);
 
   // Assign modal state
@@ -62,6 +64,26 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
       onAssignmentComplete();
     } catch (err: any) {
       showToast(err.message || 'Failed to dismiss detection', 'error');
+    }
+  };
+
+  const handlePurgeLowConfidence = async () => {
+    if (!window.confirm('Purge all unrecognized detections below 65% confidence that are likely non-face artifacts?')) {
+      return;
+    }
+    setPurging(true);
+    try {
+      const res = await apiFetch<{ status: string; message: string; deleted_count: number }>(
+        '/api/v1/detections/clean-low-confidence',
+        { method: 'POST' }
+      );
+      showToast(res.message || `Removed ${res.deleted_count} low-confidence detections`, 'success');
+      fetchQueue();
+      onAssignmentComplete();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to purge low-confidence detections', 'error');
+    } finally {
+      setPurging(false);
     }
   };
 
@@ -142,6 +164,15 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
           <span className="chip chip-warning">
             {detections.length} pending face{detections.length === 1 ? '' : 's'}
           </span>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handlePurgeLowConfidence}
+            disabled={purging || loading || detections.length === 0}
+            title="Clean detections below 65% confidence"
+          >
+            <Sparkles size={14} className={purging ? 'animate-spin' : ''} />
+            <span>Clean False Positives</span>
+          </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={fetchQueue}
@@ -233,7 +264,9 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
                     fontWeight: 700,
                     color: 'var(--accent-amber)'
                   }}>
-                    {Math.round(det.confidence * 100)}% Det.
+                    {det.confidence !== undefined && det.confidence !== null && !isNaN(det.confidence) && det.confidence > 0
+                      ? `${Math.round(det.confidence * 100)}% Det.`
+                      : 'Review'}
                   </div>
                 </div>
 

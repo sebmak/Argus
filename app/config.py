@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # Face Recognition Settings
     FACE_MODEL_NAME: str = os.getenv("FACE_MODEL_NAME", "buffalo_l")  # 'buffalo_l' or 'buffalo_s'
     SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.45"))
-    DETECTION_CONFIDENCE: float = float(os.getenv("DETECTION_CONFIDENCE", "0.50"))
+    DETECTION_CONFIDENCE: float = float(os.getenv("DETECTION_CONFIDENCE", "0.60"))
     MAX_SAMPLES_PER_PERSON: int = int(os.getenv("MAX_SAMPLES_PER_PERSON", "50"))
     
     # Latency & Hardware Optimization Settings (Crucial for high core-count servers)

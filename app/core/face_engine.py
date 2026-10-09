@@ -226,6 +226,11 @@ class FaceEngine:
                 continue
 
             bbox = [int(b) for b in face.bbox]
+            box_w = abs(bbox[2] - bbox[0])
+            box_h = abs(bbox[3] - bbox[1])
+            if box_w < 30 or box_h < 30:
+                continue
+
             # Normalize embedding
             emb = face.normed_embedding
             if emb is None or len(emb) == 0:

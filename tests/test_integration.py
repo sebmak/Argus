@@ -247,11 +247,22 @@ class TestEndToEndSystemIntegration(unittest.TestCase):
         # External event dispatcher must NOT be called for unknown face
         mock_dispatch.assert_not_called()
 
-        # But it MUST be recorded in DB unrecognized triage inbox!
+        # But it MUST be recorded in DB unrecognized triage inbox with accurate confidence!
         inbox = get_unrecognized_detections(limit=10)
         self.assertGreaterEqual(len(inbox), 1)
         latest = inbox[0]
         self.assertEqual(latest["status"], "unrecognized")
+        self.assertAlmostEqual(latest["confidence"], 0.82, places=2)
+
+        # CASE 2: Low-confidence unknown face (0.45 < UNKNOWN_MIN_CONFIDENCE 0.65)
+        # Must be SUPPRESSED from database review inbox to prevent cluttering with non-faces!
+        count_before = len(get_unrecognized_detections())
+        mock_det.confidence = 0.45
+        mock_det.thumbnail_filename = "crop_low_conf_noise.jpg"
+        self.worker.cooldowns.clear()
+        self.worker._process_frame(MagicMock())
+        count_after = len(get_unrecognized_detections())
+        self.assertEqual(count_after, count_before)
 
     def test_06_unrecognized_triage_assignment_and_dismissal(self):
         """Test assigning unknown detection to household member and dismissing false positives."""

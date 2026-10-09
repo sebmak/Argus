@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # 2. Worker loop must run on a dedicated background daemon thread without blocking the FastAPI event loop.
 # 3. get_status must return comprehensive telemetry including target_fps, actual_fps, and fps_actual for frontend compatibility.
 # 4. Stream frame acquisitions and inference must respect configured sampling rates and entity cooldowns.
+# 5. Filters out low-confidence faces and tiny non-face bounding boxes before inbox recording and alerts.
 class RtspStreamWorker:
     """
     Dedicated background worker thread for real-time RTSP stream processing,
@@ -194,6 +195,19 @@ class RtspStreamWorker:
             now = time.time()
 
             for det in detections:
+                box = getattr(det, "bbox", [])
+                if len(box) >= 4:
+                    box_w = abs(box[2] - box[0])
+                    box_h = abs(box[3] - box[1])
+                    if box_w < 35 or box_h < 35:
+                        logger.debug("Suppressing tiny RTSP detection: %dx%d (min 35x35)", box_w, box_h)
+                        continue
+
+                det_confidence = float(getattr(det, "confidence", 1.0))
+                if det_confidence < settings.DETECTION_CONFIDENCE:
+                    logger.debug("Suppressing low-confidence face detection: %.2f < %.2f", det_confidence, settings.DETECTION_CONFIDENCE)
+                    continue
+
                 match_info = face_engine.match_face(
                     query_embedding=det.embedding,
                     known_persons=known_persons
@@ -201,6 +215,14 @@ class RtspStreamWorker:
 
                 person_name = match_info["name"] if match_info["match"] else "Unknown"
                 cooldown_key = person_name.lower()
+
+                # For unknown detections: do not clutter database review queue if below UNKNOWN_MIN_CONFIDENCE
+                if not match_info["match"] and det_confidence < settings.UNKNOWN_MIN_CONFIDENCE:
+                    logger.debug(
+                        "Suppressing review inbox logging for low-confidence unknown face: %.2f < %.2f",
+                        det_confidence, settings.UNKNOWN_MIN_CONFIDENCE
+                    )
+                    continue
 
                 # Check cooldown: only fire event if last alert was > cooldown_seconds ago
                 last_alert_time = self.cooldowns.get(cooldown_key, 0.0)
@@ -218,12 +240,12 @@ class RtspStreamWorker:
                     matched_person_id=match_info["person_id"],
                     matched_name=match_info["name"] if match_info["match"] else None,
                     similarity=match_info["similarity"],
-                    status=det_status
+                    status=det_status,
+                    confidence=det_confidence
                 )
 
                 # 2. Check configured notification threshold before firing alerts
                 should_notify = False
-                det_confidence = float(getattr(det, "confidence", 1.0))
 
                 if match_info["match"]:
                     # Known person: similarity must reach or exceed notification threshold

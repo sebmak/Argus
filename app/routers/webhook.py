@@ -112,7 +112,8 @@ async def ingest_protect_webhook(
         matched_person_id=person_id,
         matched_name=person_name,
         similarity=1.0,
-        status="matched"
+        status="matched",
+        confidence=primary_face.confidence
     )
 
     # Retrieve updated person sample count

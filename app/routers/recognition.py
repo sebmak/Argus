@@ -97,7 +97,8 @@ async def recognize_faces(payload: RecognizeRequest):
                 matched_person_id=match_info["person_id"],
                 matched_name=match_info["name"] if match_info["match"] else None,
                 similarity=match_info["similarity"],
-                status=det_status
+                status=det_status,
+                confidence=det.confidence
             )
 
         box_w = det.bbox[2] - det.bbox[0]

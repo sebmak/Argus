@@ -329,21 +329,22 @@ def record_detection(
     matched_person_id: Optional[str] = None,
     matched_name: Optional[str] = None,
     similarity: float = 0.0,
-    status: str = "matched"
+    status: str = "matched",
+    confidence: float = 1.0
 ) -> str:
-    """Record a face detection event."""
+    """Record a face detection event with detection confidence."""
     detection_id = f"det_{uuid.uuid4().hex[:12]}"
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO detections (
                 id, timestamp, camera_id, thumbnail_path, bbox, 
-                matched_person_id, matched_name, similarity, status, created_at
+                matched_person_id, matched_name, similarity, status, confidence, created_at
             )
-            VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """, (
             detection_id, camera_id, thumbnail_path, json.dumps(bbox),
-            matched_person_id, matched_name, similarity, status
+            matched_person_id, matched_name, similarity, status, float(confidence)
         ))
         conn.commit()
     return detection_id
@@ -353,7 +354,7 @@ def get_unrecognized_detections(limit: int = 50, offset: int = 0) -> List[Dict[s
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, timestamp, camera_id, thumbnail_path, bbox, status, created_at
+            SELECT id, timestamp, camera_id, thumbnail_path, bbox, status, created_at, confidence
             FROM detections
             WHERE status = 'unrecognized'
             ORDER BY created_at DESC
@@ -364,8 +365,48 @@ def get_unrecognized_detections(limit: int = 50, offset: int = 0) -> List[Dict[s
         for row in rows:
             item = dict(row)
             item["bbox"] = json.loads(item["bbox"]) if item["bbox"] else []
+            raw_conf = item.get("confidence")
+            item["confidence"] = float(raw_conf) if raw_conf is not None else 1.0
             result.append(item)
         return result
+
+def purge_low_confidence_detections(min_confidence: float = 0.65) -> Dict[str, Any]:
+    """
+    Purges unreviewed/unrecognized detections with confidence below threshold,
+    and removes their orphaned thumbnail images from disk.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, thumbnail_path, confidence 
+            FROM detections 
+            WHERE status = 'unrecognized' 
+              AND (confidence IS NULL OR confidence < ?)
+        """, (min_confidence,))
+        rows = cursor.fetchall()
+
+        deleted_count = 0
+        deleted_files = 0
+        for row in rows:
+            det_id = row["id"]
+            thumb = row["thumbnail_path"]
+            if thumb:
+                thumb_file = settings.thumbnails_path / thumb
+                try:
+                    if thumb_file.exists():
+                        thumb_file.unlink()
+                        deleted_files += 1
+                except Exception as e:
+                    logger.debug("Could not remove thumbnail %s: %s", thumb, e)
+            cursor.execute("DELETE FROM detections WHERE id = ?", (det_id,))
+            deleted_count += 1
+        conn.commit()
+
+    return {
+        "deleted_count": deleted_count,
+        "deleted_files": deleted_files,
+        "threshold": min_confidence
+    }
 
 def assign_detection_to_person(detection_id: str, person_id: str) -> bool:
     """Mark an unrecognized detection as assigned to a person."""

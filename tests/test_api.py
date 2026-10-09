@@ -24,6 +24,7 @@ from app.db.database import (
     get_unrecognized_detections,
     assign_detection_to_person,
     dismiss_detection,
+    purge_low_confidence_detections,
     get_system_stats,
     verify_user_credentials
 )
@@ -123,6 +124,32 @@ class TestDatabaseAndAPIIntegration(unittest.TestCase):
         # 6. Check system stats
         stats = get_system_stats()
         self.assertGreaterEqual(stats["total_persons"], 1)
+
+    def test_purge_low_confidence_detections(self):
+        # Record 1 low-confidence detection (0.42) and 1 high-confidence detection (0.85)
+        d_low = record_detection(
+            thumbnail_path="low_conf.jpg",
+            bbox=[10, 10, 50, 50],
+            camera_id="cam1",
+            status="unrecognized",
+            confidence=0.42
+        )
+        d_high = record_detection(
+            thumbnail_path="high_conf.jpg",
+            bbox=[10, 10, 80, 80],
+            camera_id="cam1",
+            status="unrecognized",
+            confidence=0.85
+        )
+
+        # Purge detections below 0.65
+        res = purge_low_confidence_detections(min_confidence=0.65)
+        self.assertGreaterEqual(res["deleted_count"], 1)
+
+        # Verify low-confidence detection is gone, but high-confidence remains
+        queue = get_unrecognized_detections()
+        self.assertFalse(any(d["id"] == d_low for d in queue))
+        self.assertTrue(any(d["id"] == d_high for d in queue))
 
 if __name__ == "__main__":
     unittest.main()
