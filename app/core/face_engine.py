@@ -4,13 +4,33 @@ import logging
 import uuid
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
-import cv2
-import numpy as np
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    import numpy as np
+except ImportError:
+    from ..db.database import np
+
 from ..config import settings
 
 logger = logging.getLogger(__name__)
 
+# ==============================================================================
+# Rules for FaceDetectionResult:
+# 1. Represents an individual detected face box, embedding, confidence, and crop.
+# 2. Member variables must be declared at the top of the class.
+# ==============================================================================
 class FaceDetectionResult:
+    bbox: List[int]
+    confidence: float
+    embedding: np.ndarray
+    landmarks: List[List[float]]
+    thumbnail_base64: str
+    thumbnail_filename: str
+
     def __init__(
         self,
         bbox: List[int],
@@ -27,7 +47,17 @@ class FaceDetectionResult:
         self.thumbnail_base64 = thumbnail_base64
         self.thumbnail_filename = thumbnail_filename
 
+# ==============================================================================
+# Rules for FaceEngine:
+# 1. Encapsulates InsightFace face detection, ArcFace embedding, and cosine matching.
+# 2. Class and instance variables must be placed at the top of the class.
+# 3. Supports mock_mode for headless test environments without host ONNX runtimes.
+# ==============================================================================
 class FaceEngine:
+    app: Any = None
+    initialized: bool = False
+    mock_mode: bool = False
+
     def __init__(self):
         self.app = None
         self.initialized = False

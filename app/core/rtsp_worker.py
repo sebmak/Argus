@@ -1,10 +1,16 @@
 import os
-import cv2
 import time
 import logging
 import threading
 from typing import Dict, Any, Optional, List
-import numpy as np
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+try:
+    import numpy as np
+except ImportError:
+    from ..db.database import np
 from ..config import settings
 from .face_engine import face_engine
 from .events import dispatch_detection_event

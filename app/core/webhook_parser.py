@@ -1,12 +1,29 @@
 import logging
 from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, Field
+try:
+    from pydantic import BaseModel, Field
+except ImportError:
+    class BaseModel:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+        def dict(self, **kwargs):
+            return self.__dict__
+    def Field(default=None, default_factory=None, **kwargs):
+        if default_factory is not None:
+            return default_factory()
+        return default
 
 logger = logging.getLogger(__name__)
 
+# ==============================================================================
+# Rules for WebhookPayload:
+# 1. Variables and data model properties must be declared at the top of the class.
+# 2. Encapsulates normalized UniFi Protect and Home Assistant detection webhook events.
+# ==============================================================================
 class WebhookPayload(BaseModel):
-    person_name: str
-    image_base64: str
+    person_name: str = ""
+    image_base64: str = ""
     camera_id: str = ""
     event_id: str = ""
     confidence: float = 0.0

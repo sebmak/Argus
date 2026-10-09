@@ -9,11 +9,88 @@ from pathlib import Path
 try:
     import numpy as np
 except ImportError:
-# Rules for _DummyNumpy class:
-# 1. Variables and mock type attributes must be defined at the top of the class.
-# 2. Provides lightweight fallback type annotations when numpy is not installed on host.
+    import struct
+    import math
+
+    # Rules for _DummyArray class:
+    # 1. Variables and element representation must be declared at the top of the class.
+    # 2. Implements lightweight vector arithmetic and byte serialization fallbacks when numpy is unavailable.
+    class _DummyArray(list):
+        def astype(self, dtype):
+            return self
+
+        def tobytes(self):
+            return struct.pack(f"{len(self)}f", *self)
+
+        def __truediv__(self, scalar):
+            return _DummyArray([x / scalar for x in self])
+
+        def __mul__(self, scalar):
+            return _DummyArray([x * scalar for x in self])
+
+        def __neg__(self):
+            return _DummyArray([-x for x in self])
+
+        def __add__(self, other):
+            return _DummyArray([x + y for x, y in zip(self, other)])
+
+    # Rules for _DummyLinalg class:
+    # 1. Variables and math configuration must be declared at the top of the class.
+    # 2. Provides pure-python Euclidean norm calculation fallback.
+    class _DummyLinalg:
+        @staticmethod
+        def norm(vec):
+            return math.sqrt(sum(x * x for x in vec)) or 1e-10
+
+    # Rules for _DummyNumpy class:
+    # 1. Variables and mock type attributes must be defined at the top of the class.
+    # 2. Provides lightweight fallback math methods and array conversions when numpy is not installed on host.
     class _DummyNumpy:
         ndarray = Any
+        float32 = "float32"
+        linalg = _DummyLinalg()
+
+        @staticmethod
+        def frombuffer(buf, dtype=None):
+            num = len(buf) // 4
+            if num == 0:
+                return _DummyArray([])
+            return _DummyArray(struct.unpack(f"{num}f", buf[:num * 4]))
+
+        @staticmethod
+        def stack(arrays):
+            return list(arrays)
+
+        @staticmethod
+        def mean(arrays, axis=0):
+            if not arrays:
+                return _DummyArray([])
+            length = len(arrays[0])
+            sums = [0.0] * length
+            for arr in arrays:
+                for i in range(length):
+                    sums[i] += arr[i]
+            count = len(arrays)
+            return _DummyArray([s / count for s in sums])
+
+        @staticmethod
+        def zeros(n, dtype=None):
+            return _DummyArray([0.0] * n)
+
+        @staticmethod
+        def dot(a, b):
+            return sum(x * y for x, y in zip(a, b))
+
+        @staticmethod
+        def sqrt(x):
+            return math.sqrt(max(0.0, float(x)))
+
+        class random:
+            @staticmethod
+            def randn(n):
+                import random
+                return _DummyArray([random.gauss(0, 1) for _ in range(n)])
+
     np = _DummyNumpy()
 
 try:
@@ -507,6 +584,11 @@ def save_settings_bulk(updates: Dict[str, Any]) -> Dict[str, Any]:
         conn.commit()
     sync_settings_to_runtime()
     return get_all_settings()
+
+def update_setting(key: str, val: Any) -> Optional[str]:
+    """Updates a single setting in SQLite and immediately syncs runtime memory."""
+    save_settings_bulk({key: val})
+    return get_setting(key)
 
 def sync_settings_to_runtime():
     """Applies database settings immediately to the active in-memory configuration and workers."""

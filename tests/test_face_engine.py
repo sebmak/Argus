@@ -1,8 +1,20 @@
 import unittest
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    from app.db.database import np
+
 from app.core.face_engine import FaceEngine
 
+# ==============================================================================
+# Rules for TestFaceEngineMath:
+# 1. Tests vector arithmetic, cosine similarity, known member matching, and unknown thresholds.
+# 2. Member variables must be declared at the top of the class.
+# 3. Compatible with both native NumPy and pure-Python vector fallback implementations.
+# ==============================================================================
 class TestFaceEngineMath(unittest.TestCase):
+    engine: FaceEngine
+
     def setUp(self):
         self.engine = FaceEngine()
         self.engine.mock_mode = True

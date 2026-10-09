@@ -2,7 +2,10 @@ import unittest
 import os
 import shutil
 from pathlib import Path
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    from app.db.database import np
 
 # Set test environment paths
 os.environ["DATA_DIR"] = "./data_test"
@@ -25,9 +28,23 @@ from app.db.database import (
     verify_user_credentials
 )
 
+# ==============================================================================
+# Rules for TestDatabaseAndAPIIntegration:
+# 1. Tests SQLite data layer, household member CRUD, embedding centroids, and detection inbox.
+# 2. Member variables must be declared at the top of the class.
+# 3. Uses isolated temporary directories for test databases and cleans up afterwards.
+# ==============================================================================
 class TestDatabaseAndAPIIntegration(unittest.TestCase):
+    test_dir: Path
+
     @classmethod
     def setUpClass(cls):
+        os.environ["DATA_DIR"] = "./data_test"
+        os.environ["CONFIG_DIR"] = "./data_test"
+        cls.test_dir = Path("./data_test")
+        if cls.test_dir.exists():
+            shutil.rmtree(cls.test_dir, ignore_errors=True)
+        cls.test_dir.mkdir(parents=True, exist_ok=True)
         init_db()
 
     @classmethod
@@ -36,6 +53,8 @@ class TestDatabaseAndAPIIntegration(unittest.TestCase):
         test_dir = Path("./data_test")
         if test_dir.exists():
             shutil.rmtree(test_dir, ignore_errors=True)
+        os.environ.pop("DATA_DIR", None)
+        os.environ.pop("CONFIG_DIR", None)
 
     def test_default_admin_user(self):
         user = verify_user_credentials("admin", "admin123")

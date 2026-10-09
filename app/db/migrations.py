@@ -163,6 +163,23 @@ class MigrationManager:
             # Check if core tables already exist
             if table_exists(conn, "persons") and table_exists(conn, "face_samples"):
                 logger.info("Detected pre-existing database tables; backfilling migration 1 (v1.0.0)...")
+                if not table_exists(conn, "users"):
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS users (
+                            id TEXT PRIMARY KEY,
+                            username TEXT UNIQUE NOT NULL,
+                            password_hash TEXT NOT NULL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    cursor.execute("SELECT COUNT(*) FROM users")
+                    if cursor.fetchone()[0] == 0:
+                        from .database import hash_password
+                        admin_id = f"u_{uuid.uuid4().hex[:12]}"
+                        conn.execute(
+                            "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
+                            (admin_id, settings.DEFAULT_ADMIN_USER, hash_password(settings.DEFAULT_ADMIN_PASSWORD))
+                        )
                 conn.execute(
                     "INSERT OR IGNORE INTO schema_migrations (migration_id, app_version, name) VALUES (?, ?, ?)",
                     (1, "1.0.0", "initial_household_schema")

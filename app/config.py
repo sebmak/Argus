@@ -30,7 +30,7 @@ def _resolve_config_dir() -> str:
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "Household Face Detection API"
-    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.7")
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.8")
     DEBUG: bool = False
 
     # Storage & Unraid Config Paths
@@ -84,7 +84,8 @@ class Settings(BaseSettings):
 
     @property
     def config_path(self) -> Path:
-        path = Path(self.CONFIG_DIR)
+        dir_name = os.getenv("CONFIG_DIR") or os.getenv("DATA_DIR") or self.CONFIG_DIR
+        path = Path(dir_name)
         try:
             path.mkdir(parents=True, exist_ok=True)
         except OSError:
