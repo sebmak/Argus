@@ -414,6 +414,24 @@ def seed_default_settings():
     """Seeds SQLite settings table with defaults from environment config if missing, then syncs to memory."""
     with get_db() as conn:
         cursor = conn.cursor()
+        # Defensive check: ensure settings table exists
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+        # If a rollback backup existed from a previous downgrade, restore it!
+        cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name = 'settings_v1_1_backup'")
+        if cursor.fetchone():
+            logger.info("Restoring previous settings from rollback backup table in seed_default_settings...")
+            cursor.execute("""
+                INSERT OR REPLACE INTO settings (key, value)
+                SELECT key, value FROM settings_v1_1_backup
+            """)
+            cursor.execute("DROP TABLE IF EXISTS settings_v1_1_backup;")
+            conn.commit()
+
         for key, val_fn in DEFAULT_SETTINGS_MAP.items():
             cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
             if not cursor.fetchone():

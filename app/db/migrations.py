@@ -40,6 +40,8 @@ def add_column_if_missing(
     default: Optional[str] = None
 ) -> bool:
     """Safely adds a column to an existing table if it does not already exist."""
+    if not table_exists(conn, table_name):
+        return False
     if not column_exists(conn, table_name, column_name):
         default_clause = f" DEFAULT {default}" if default is not None else ""
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {col_type}{default_clause}")
@@ -123,6 +125,7 @@ class MigrationStep:
 # 2. Class and instance variables must be placed at the top of the class.
 # 3. Automatic backups must be triggered before rollbacks or structural changes.
 # 4. Must seamlessly inspect and backfill preexisting unversioned databases.
+# 5. Server boot auto-migrations must only roll forward and never roll back unless explicitly requested.
 # ==============================================================================
 class MigrationManager:
     migrations: List[MigrationStep] = []
@@ -198,12 +201,14 @@ class MigrationManager:
     def migrate_to_app_version(
         self,
         target_app_version: str,
-        db_path: str
+        db_path: str,
+        allow_rollback: bool = True,
+        apply_all_unapplied: bool = False
     ) -> Dict[str, Any]:
         """
         Reconciles database schema with target application version.
         Rolls forward if database is behind target version.
-        Rolls back safely if database is ahead of target version (server rollback).
+        Rolls back safely only when allow_rollback is True and database is ahead of target version.
         """
         p = Path(db_path)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -224,25 +229,27 @@ class MigrationManager:
             applied_records = self.get_applied_migrations(conn)
             applied_ids = {rec["migration_id"] for rec in applied_records}
 
-            # 1. Check if database is AHEAD of target app version -> ROLL BACK
+            # 1. Check if database is AHEAD of target app version -> ROLL BACK (Only if explicitly permitted)
             migrations_to_rollback = []
-            for step in reversed(self.migrations):
-                step_version_tuple = parse_version_tuple(step.version_tag)
-                if step.migration_id in applied_ids and step_version_tuple > target_tuple:
-                    migrations_to_rollback.append(step)
+            if allow_rollback:
+                for step in reversed(self.migrations):
+                    step_version_tuple = parse_version_tuple(step.version_tag)
+                    # Never roll back baseline migration 1 (persons, face_samples, detections, users)
+                    if step.migration_id > 1 and step.migration_id in applied_ids and step_version_tuple > target_tuple:
+                        migrations_to_rollback.append(step)
 
-            if migrations_to_rollback:
-                logger.warning(
-                    "Server downgrade/rollback detected! Current database has migrations beyond app version %s. Executing safe rollbacks...",
-                    target_app_version
-                )
-                backup_path = backup_database(db_path, reason="pre_rollback")
-                for step in migrations_to_rollback:
-                    logger.info("Rolling back migration %d: '%s' (%s)...", step.migration_id, step.name, step.version_tag)
-                    step.down(conn)
-                    conn.execute("DELETE FROM schema_migrations WHERE migration_id = ?", (step.migration_id,))
-                    conn.commit()
-                    rolled_back_names.append(step.name)
+                if migrations_to_rollback:
+                    logger.warning(
+                        "Server downgrade/rollback detected! Current database has migrations beyond app version %s. Executing safe rollbacks...",
+                        target_app_version
+                    )
+                    backup_path = backup_database(db_path, reason="pre_rollback")
+                    for step in migrations_to_rollback:
+                        logger.info("Rolling back migration %d: '%s' (%s)...", step.migration_id, step.name, step.version_tag)
+                        step.down(conn)
+                        conn.execute("DELETE FROM schema_migrations WHERE migration_id = ?", (step.migration_id,))
+                        conn.commit()
+                        rolled_back_names.append(step.name)
 
             # 2. Check if database is BEHIND target app version -> ROLL FORWARD
             # Re-read applied IDs after potential rollbacks
@@ -251,9 +258,13 @@ class MigrationManager:
 
             migrations_to_apply = []
             for step in self.migrations:
-                step_version_tuple = parse_version_tuple(step.version_tag)
-                if step.migration_id not in applied_ids and step_version_tuple <= target_tuple:
-                    migrations_to_apply.append(step)
+                if step.migration_id not in applied_ids:
+                    if apply_all_unapplied:
+                        migrations_to_apply.append(step)
+                    else:
+                        step_version_tuple = parse_version_tuple(step.version_tag)
+                        if step_version_tuple <= target_tuple:
+                            migrations_to_apply.append(step)
 
             if migrations_to_apply:
                 if not backup_path and p.is_file():
@@ -398,7 +409,8 @@ class MigrationManager:
             add_column_if_missing(conn, "detections", "confidence", "REAL", default="1.0")
 
             # 3. Add index on matched_person_id for rapid person history lookups
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_detections_person ON detections(matched_person_id);")
+            if table_exists(conn, "detections"):
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_detections_person ON detections(matched_person_id);")
 
         def down_v1_1_0(conn: sqlite3.Connection):
             # Non-destructive rollback:
@@ -425,15 +437,25 @@ class MigrationManager:
 migration_manager = MigrationManager()
 
 def run_migrations(target_version: Optional[str] = None, db_path: Optional[str] = None) -> Dict[str, Any]:
-    """Runs database migrations forward (or back) to match target_version."""
+    """Runs database migrations forward to match target_version (or applies all pending migrations on boot)."""
     target = target_version or settings.APP_VERSION
     target_db = db_path or settings.db_path
-    return migration_manager.migrate_to_app_version(target, target_db)
+    return migration_manager.migrate_to_app_version(
+        target_app_version=target,
+        db_path=target_db,
+        allow_rollback=False,
+        apply_all_unapplied=True
+    )
 
 def rollback_migrations(target_version: str, db_path: Optional[str] = None) -> Dict[str, Any]:
     """Rolls back database migrations to match target_version."""
     target_db = db_path or settings.db_path
-    return migration_manager.migrate_to_app_version(target_version, target_db)
+    return migration_manager.migrate_to_app_version(
+        target_app_version=target_version,
+        db_path=target_db,
+        allow_rollback=True,
+        apply_all_unapplied=False
+    )
 
 def get_migration_status(db_path: Optional[str] = None) -> Dict[str, Any]:
     """Returns the current migration state and applied history."""
