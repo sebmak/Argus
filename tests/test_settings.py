@@ -1,0 +1,124 @@
+import unittest
+import sys
+import tempfile
+import os
+from pathlib import Path
+from unittest.mock import MagicMock
+
+# Graceful mocks for host environment
+for mod in ["cv2", "numpy", "httpx", "paho", "paho.mqtt", "paho.mqtt.client", "fastapi", "fastapi.security", "jose"]:
+    if mod not in sys.modules:
+        try:
+            __import__(mod)
+        except ImportError:
+            sys.modules[mod] = MagicMock()
+
+bcrypt_mock = MagicMock()
+bcrypt_mock.gensalt.return_value = b"$2b$12$e0abcdef12345678901234"
+bcrypt_mock.hashpw.return_value = b"$2b$12$hashedpasswordmockmockmock"
+sys.modules["bcrypt"] = bcrypt_mock
+
+if "pydantic" not in sys.modules:
+    class DummyBaseModel:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+        def dict(self, **kwargs):
+            return self.__dict__
+    pyd_mock = MagicMock()
+    pyd_mock.BaseModel = DummyBaseModel
+    pyd_mock.BaseSettings = DummyBaseModel
+    pyd_mock.Field = lambda *args, **kwargs: None
+    sys.modules["pydantic"] = pyd_mock
+    sys.modules["pydantic_settings"] = pyd_mock
+
+from app.config import settings
+from app.db.database import (
+    init_db,
+    seed_default_settings,
+    get_setting,
+    get_all_settings,
+    save_settings_bulk,
+    sync_settings_to_runtime
+)
+
+class TestSettingsManagement(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.test_dir = Path("data/test_settings_data")
+        cls.test_dir.mkdir(parents=True, exist_ok=True)
+        settings.CONFIG_DIR = str(cls.test_dir)
+        settings.DATA_DIR = str(cls.test_dir)
+        init_db()
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+        if cls.test_dir.exists():
+            shutil.rmtree(cls.test_dir, ignore_errors=True)
+
+    def test_seed_and_get_all_settings(self):
+        seed_default_settings()
+        all_settings = get_all_settings()
+
+        self.assertIn("detection_confidence", all_settings)
+        self.assertIn("similarity_threshold", all_settings)
+        self.assertIn("notification_threshold", all_settings)
+        self.assertIn("notify_on_unknown", all_settings)
+        self.assertIn("unknown_min_confidence", all_settings)
+        self.assertIn("rtsp_url", all_settings)
+        self.assertIn("mqtt_enabled", all_settings)
+
+        self.assertIsInstance(all_settings["notification_threshold"], float)
+        self.assertIsInstance(all_settings["notify_on_unknown"], bool)
+        self.assertIsInstance(all_settings["unknown_min_confidence"], float)
+
+    def test_save_settings_bulk_and_runtime_sync(self):
+        updates = {
+            "detection_confidence": 0.65,
+            "similarity_threshold": 0.52,
+            "notification_threshold": 0.70,
+            "notify_on_unknown": False,
+            "unknown_min_confidence": 0.80,
+            "rtsp_camera_name": "Backyard Gate",
+            "rtsp_fps": 4.5,
+            "rtsp_cooldown_seconds": 60,
+            "rtsp_webhook_url": "http://192.168.1.100:8123/webhook/gate",
+            "mqtt_enabled": True,
+            "mqtt_host": "192.168.1.200",
+            "mqtt_port": 1883,
+            "mqtt_topic": "home/cameras/gate"
+        }
+
+        result = save_settings_bulk(updates)
+
+        # Verify returned dictionary
+        self.assertEqual(result["detection_confidence"], 0.65)
+        self.assertEqual(result["similarity_threshold"], 0.52)
+        self.assertEqual(result["notification_threshold"], 0.70)
+        self.assertFalse(result["notify_on_unknown"])
+        self.assertEqual(result["unknown_min_confidence"], 0.80)
+        self.assertEqual(result["rtsp_camera_name"], "Backyard Gate")
+        self.assertEqual(result["rtsp_fps"], 4.5)
+        self.assertEqual(result["rtsp_cooldown_seconds"], 60)
+        self.assertEqual(result["rtsp_webhook_url"], "http://192.168.1.100:8123/webhook/gate")
+        self.assertTrue(result["mqtt_enabled"])
+        self.assertEqual(result["mqtt_host"], "192.168.1.200")
+        self.assertEqual(result["mqtt_topic"], "home/cameras/gate")
+
+        # Verify active runtime settings singleton was immediately updated
+        self.assertEqual(settings.DETECTION_CONFIDENCE, 0.65)
+        self.assertEqual(settings.SIMILARITY_THRESHOLD, 0.52)
+        self.assertEqual(settings.NOTIFICATION_THRESHOLD, 0.70)
+        self.assertFalse(settings.NOTIFY_ON_UNKNOWN)
+        self.assertEqual(settings.UNKNOWN_MIN_CONFIDENCE, 0.80)
+        self.assertEqual(settings.RTSP_CAMERA_NAME, "Backyard Gate")
+        self.assertEqual(settings.RTSP_FPS, 4.5)
+        self.assertEqual(settings.RTSP_COOLDOWN_SECONDS, 60)
+        self.assertEqual(settings.RTSP_WEBHOOK_URL, "http://192.168.1.100:8123/webhook/gate")
+        self.assertTrue(settings.MQTT_ENABLED)
+        self.assertEqual(settings.MQTT_HOST, "192.168.1.200")
+        self.assertEqual(settings.MQTT_TOPIC, "home/cameras/gate")
+
+if __name__ == "__main__":
+    unittest.main()
