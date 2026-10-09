@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from .config import settings
 from .db.database import init_db, seed_default_settings
 from .core.face_engine import face_engine
+from .core.auth import get_current_user
 from .routers import (
     recognition_router,
     webhook_router,
@@ -66,16 +67,22 @@ app.add_middleware(
 # Register API Routers
 app.include_router(recognition_router)
 app.include_router(webhook_router)
-app.include_router(persons_router)
-app.include_router(detections_router)
 app.include_router(auth_router)
-app.include_router(rtsp_router)
-app.include_router(settings_router)
+
+# Administrative & Management Routers (gated by authentication cookie or bearer token)
+app.include_router(persons_router, dependencies=[Depends(get_current_user)])
+app.include_router(detections_router, dependencies=[Depends(get_current_user)])
+app.include_router(rtsp_router, dependencies=[Depends(get_current_user)])
+app.include_router(settings_router, dependencies=[Depends(get_current_user)])
 
 # Static Web Application Files
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+assets_dir = static_dir / "assets"
+assets_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
 @app.get("/health", tags=["System"])
 async def health_check():
@@ -89,8 +96,13 @@ async def health_check():
     }
 
 @app.get("/", include_in_schema=False)
-async def serve_index():
-    """Serve the Web Dashboard SPA."""
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa(full_path: str = ""):
+    """Serve static file or fallback to React SPA index.html."""
+    if full_path:
+        candidate = static_dir / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
     index_file = static_dir / "index.html"
     if index_file.is_file():
         return FileResponse(index_file)

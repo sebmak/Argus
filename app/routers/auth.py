@@ -10,10 +10,16 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["Auth & System"])
 
+# Rules for LoginRequest class:
+# 1. Variables and input schema fields must be declared at the top of the class.
+# 2. Used for administrator authentication with username and password.
 class LoginRequest(BaseModel):
     username: str
     password: str
 
+# Rules for LoginResponse class:
+# 1. Variables and output schema fields must be declared at the top of the class.
+# 2. Contains signed JWT bearer token and username.
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -37,7 +43,8 @@ async def login(payload: LoginRequest, response: Response):
         value=token,
         httponly=True,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        samesite="lax"
+        samesite="lax",
+        path="/"
     )
 
     return LoginResponse(
@@ -48,7 +55,7 @@ async def login(payload: LoginRequest, response: Response):
 @router.post("/auth/logout")
 async def logout(response: Response):
     """Clear session cookie."""
-    response.delete_cookie("access_token")
+    response.delete_cookie(key="access_token", path="/")
     return {"status": "success", "message": "Logged out successfully"}
 
 @router.get("/auth/me")
@@ -57,7 +64,7 @@ async def current_user(user: dict = Depends(get_current_user)):
     return {"id": user["id"], "username": user["username"]}
 
 @router.get("/stats")
-async def dashboard_stats():
+async def dashboard_stats(user: dict = Depends(get_current_user)):
     """Retrieve system counts and recent activity feed."""
     stats = get_system_stats()
     # Format URLs for recent activity thumbnails
@@ -66,7 +73,7 @@ async def dashboard_stats():
     return stats
 
 @router.get("/thumbnails/{filename}")
-async def serve_thumbnail(filename: str):
+async def serve_thumbnail(filename: str, user: dict = Depends(get_current_user)):
     """Serve cropped face thumbnail images."""
     # Sanitize path to prevent directory traversal
     safe_name = Path(filename).name

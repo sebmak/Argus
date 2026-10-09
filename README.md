@@ -16,11 +16,15 @@ A self-hosted, privacy-first Docker container providing real-time face detection
   * Parses alerts and base64 snapshots directly from **Home Assistant** and **UniFi Protect**.
   * When a camera identifies a known member, it automatically extracts their new face embedding and updates their profile centroid, making recognition progressively smarter under diverse lighting and angles.
 
-* **Modern Dark Glassmorphism Web App**:
+* **Modern React 19 + TypeScript Glassmorphism Web App**:
+  * **Secure Authentication Gate**: Access to the dashboard, camera previews, and admin endpoints is strictly protected by session authentication with secure HttpOnly cookies (`SameSite=lax`). Visitors without an active session cannot view any feeds or data.
+  * **Modular React Architecture**: Re-architected from monolithic legacy scripts to clean, typed React 19 components with Vite, custom Lucide iconography, and glassmorphic styling tokens.
   * **Dashboard**: Real-time detection counters, member counts, and live activity stream.
-  * **Unknown Faces Inbox**: Visual gallery of unknown detections with 1-click assignment to existing members or new entities.
-  * **Known Members Directory**: View household members, sample counts, and manage/delete individual training samples.
+  * **Review Queue**: Visual gallery of unrecognized face detections with 1-click assignment to existing members or new entities.
+  * **Household Directory**: Manage household members, inspect 512-d embeddings and multi-angle photo samples, or upload extra reference angles.
   * **Interactive Test Sandbox**: Drag-and-drop playground with live overlaid bounding boxes, identity tags, and similarity scores.
+  * **RTSP & MQTT Console**: Real-time camera monitor, worker thread controls, webhook filtering policies, and broker credentials.
+  * **Database Migrations Manager**: Live schema roll forward and rollback controls with automatic SQLite snapshots.
 
 * **Real-Time RTSP Stream & MQTT Events**:
   * Continuous background video ingestion on a **dedicated worker thread** (never blocks the REST API).
