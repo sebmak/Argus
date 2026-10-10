@@ -81,6 +81,8 @@ export interface SystemSettings {
   rtsp_camera_name: string;
   rtsp_fps: number;
   rtsp_cooldown_seconds: number;
+  rtsp_motion_gating_enabled?: boolean;
+  rtsp_motion_threshold?: number;
   rtsp_webhook_url: string;
   webhook_only_known_faces: boolean;
   mqtt_enabled: boolean;
@@ -111,6 +113,9 @@ export interface RtspStatus {
   target_fps: number;
   actual_fps?: number;
   fps_actual?: number;
+  motion_gating_enabled?: boolean;
+  motion_detected?: boolean;
+  motion_threshold?: number;
   last_error?: string | null;
   active_cooldowns?: Record<string, number>;
   last_detection?: {

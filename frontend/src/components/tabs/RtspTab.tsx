@@ -13,7 +13,8 @@ import {
   Wifi,
   WifiOff,
   ShieldCheck,
-  Server
+  Server,
+  Zap
 } from 'lucide-react';
 import { apiFetch } from '../../api';
 import type { RtspStatus, SystemSettings } from '../../types';
@@ -30,6 +31,8 @@ export const RtspTab: React.FC = () => {
   const [cameraName, setCameraName] = useState('Front Porch');
   const [fps, setFps] = useState(2.0);
   const [cooldownSeconds, setCooldownSeconds] = useState(30);
+  const [motionGatingEnabled, setMotionGatingEnabled] = useState(true);
+  const [motionThreshold, setMotionThreshold] = useState(0.015);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookOnlyKnown, setWebhookOnlyKnown] = useState(true);
   const [mqttOnlyKnown, setMqttOnlyKnown] = useState(true);
@@ -71,6 +74,12 @@ export const RtspTab: React.FC = () => {
         if (typeof res.rtsp_fps === 'number' && !isNaN(res.rtsp_fps)) setFps(res.rtsp_fps);
         if (typeof res.rtsp_cooldown_seconds === 'number' && !isNaN(res.rtsp_cooldown_seconds)) {
           setCooldownSeconds(res.rtsp_cooldown_seconds);
+        }
+        if (typeof res.rtsp_motion_gating_enabled === 'boolean') {
+          setMotionGatingEnabled(res.rtsp_motion_gating_enabled);
+        }
+        if (typeof res.rtsp_motion_threshold === 'number' && !isNaN(res.rtsp_motion_threshold)) {
+          setMotionThreshold(res.rtsp_motion_threshold);
         }
         if (typeof res.rtsp_webhook_url === 'string') setWebhookUrl(res.rtsp_webhook_url);
         if (typeof res.webhook_only_known_faces === 'boolean') setWebhookOnlyKnown(res.webhook_only_known_faces);
@@ -135,6 +144,8 @@ export const RtspTab: React.FC = () => {
         camera_name: cameraName,
         fps,
         cooldown_seconds: cooldownSeconds,
+        motion_gating_enabled: motionGatingEnabled,
+        motion_threshold: motionThreshold,
         webhook_url: webhookUrl,
         webhook_only_known_faces: webhookOnlyKnown,
         mqtt_enabled: mqttEnabled,
@@ -225,7 +236,7 @@ export const RtspTab: React.FC = () => {
       </div>
 
       {/* Real-time Telemetry Status Bar */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '1rem' }}>
         {/* Worker Status */}
         <div className="glass-panel" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div style={{
@@ -257,6 +268,32 @@ export const RtspTab: React.FC = () => {
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Actual Sampling FPS</div>
             <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'JetBrains Mono, monospace' }}>
               {status ? `${actualFps.toFixed(1)} / ${targetFps.toFixed(1)} fps` : '0.0 fps'}
+            </div>
+          </div>
+        </div>
+
+        {/* Motion Gating / CPU Saver Telemetry */}
+        <div className="glass-panel" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{
+            width: '40px', height: '40px', borderRadius: '10px',
+            background: (status?.motion_gating_enabled ?? motionGatingEnabled)
+              ? (status?.motion_detected ? 'rgba(56, 189, 248, 0.2)' : 'rgba(16, 185, 129, 0.15)')
+              : 'rgba(100, 116, 139, 0.15)',
+            color: (status?.motion_gating_enabled ?? motionGatingEnabled)
+              ? (status?.motion_detected ? 'var(--accent-sky)' : 'var(--accent-emerald)')
+              : 'var(--text-dim)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Zap size={20} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Motion Gating (CPU)</div>
+            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
+              {!isRunning
+                ? (motionGatingEnabled ? 'Gating Armed' : 'Disabled')
+                : (status?.motion_gating_enabled
+                    ? (status.motion_detected ? 'Motion Detected' : 'Idle (CPU Saving)')
+                    : 'Continuous (Always)')}
             </div>
           </div>
         </div>
@@ -489,6 +526,60 @@ export const RtspTab: React.FC = () => {
                   style={{ width: '100%' }}
                 />
               </div>
+            </div>
+
+            {/* Motion Detection Gating Optimization Card */}
+            <div style={{
+              padding: '1rem',
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(0,0,0,0.2)',
+              border: '1px solid var(--border-subtle)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Zap size={16} color="var(--accent-emerald)" />
+                  <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Motion Detection Gating (CPU Saver)</span>
+                </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={motionGatingEnabled}
+                    onChange={e => setMotionGatingEnabled(e.target.checked)}
+                  />
+                  <span style={{ color: '#fff', fontWeight: 500 }}>Enable Gating</span>
+                </label>
+              </div>
+
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Skips heavy deep-learning face inference when camera pixels are static, cutting idle CPU load by over 90%. Includes an automatic 10-second safety heartbeat to never miss still subjects.
+              </div>
+
+              {motionGatingEnabled && (
+                <div style={{ marginTop: '0.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                    <label className="form-label" style={{ margin: 0, fontSize: '0.8rem' }}>Motion Sensitivity Threshold</label>
+                    <span className="chip chip-info" style={{ fontSize: '0.7rem' }}>
+                      {(motionThreshold * 100).toFixed(1)}% pixels changed
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.005"
+                    max="0.05"
+                    step="0.002"
+                    value={motionThreshold}
+                    onChange={e => setMotionThreshold(parseFloat(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginTop: '3px' }}>
+                    Lower percentage triggers on smaller movements (subtle head shifts); higher percentage requires larger body movement. Default: 1.5%.
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Webhook Configuration Card */}

@@ -704,6 +704,8 @@ DEFAULT_SETTINGS_MAP = {
     "rtsp_camera_name": lambda: settings.RTSP_CAMERA_NAME,
     "rtsp_fps": lambda: str(settings.RTSP_FPS),
     "rtsp_cooldown_seconds": lambda: str(settings.RTSP_COOLDOWN_SECONDS),
+    "rtsp_motion_gating_enabled": lambda: "true" if settings.RTSP_MOTION_GATING_ENABLED else "false",
+    "rtsp_motion_threshold": lambda: str(settings.RTSP_MOTION_THRESHOLD),
     "rtsp_webhook_url": lambda: settings.RTSP_WEBHOOK_URL,
     "unrecognized_track_window_seconds": lambda: str(settings.UNRECOGNIZED_TRACK_WINDOW_SECONDS),
     "webhook_only_known_faces": lambda: "true" if settings.WEBHOOK_ONLY_KNOWN_FACES else "false",
@@ -749,7 +751,8 @@ def seed_default_settings():
             "webhook_only_known_faces": "WEBHOOK_ONLY_KNOWN_FACES",
             "mqtt_only_known_faces": "MQTT_ONLY_KNOWN_FACES",
             "mqtt_enabled": "MQTT_ENABLED",
-            "rtsp_enabled": "RTSP_ENABLED"
+            "rtsp_enabled": "RTSP_ENABLED",
+            "rtsp_motion_gating_enabled": "RTSP_MOTION_GATING_ENABLED"
         }
         for s_key, env_name in env_explicit_sync_bool.items():
             if env_name in os.environ and os.environ[env_name].strip() != "":
@@ -770,6 +773,7 @@ def seed_default_settings():
             "rtsp_camera_name": "RTSP_CAMERA_NAME",
             "rtsp_fps": "RTSP_FPS",
             "rtsp_cooldown_seconds": "RTSP_COOLDOWN_SECONDS",
+            "rtsp_motion_threshold": "RTSP_MOTION_THRESHOLD",
             "rtsp_webhook_url": "RTSP_WEBHOOK_URL",
             "mqtt_host": "MQTT_HOST",
             "mqtt_port": "MQTT_PORT",
@@ -814,6 +818,8 @@ def get_all_settings() -> Dict[str, Any]:
         "rtsp_camera_name": raw.get("rtsp_camera_name", settings.RTSP_CAMERA_NAME),
         "rtsp_fps": float(raw.get("rtsp_fps", settings.RTSP_FPS)),
         "rtsp_cooldown_seconds": int(raw.get("rtsp_cooldown_seconds", settings.RTSP_COOLDOWN_SECONDS)),
+        "rtsp_motion_gating_enabled": raw.get("rtsp_motion_gating_enabled", "true" if settings.RTSP_MOTION_GATING_ENABLED else "false").lower() in ("true", "1", "yes"),
+        "rtsp_motion_threshold": float(raw.get("rtsp_motion_threshold", settings.RTSP_MOTION_THRESHOLD)),
         "rtsp_webhook_url": raw.get("rtsp_webhook_url", settings.RTSP_WEBHOOK_URL),
         "unrecognized_track_window_seconds": int(raw.get("unrecognized_track_window_seconds", settings.UNRECOGNIZED_TRACK_WINDOW_SECONDS)),
         "webhook_only_known_faces": raw.get("webhook_only_known_faces", "true" if settings.WEBHOOK_ONLY_KNOWN_FACES else "false").lower() in ("true", "1", "yes"),
@@ -894,6 +900,10 @@ def sync_settings_to_runtime():
             settings.RTSP_FPS = float(raw["rtsp_fps"])
         if "rtsp_cooldown_seconds" in raw:
             settings.RTSP_COOLDOWN_SECONDS = int(raw["rtsp_cooldown_seconds"])
+        if "rtsp_motion_gating_enabled" in raw:
+            settings.RTSP_MOTION_GATING_ENABLED = raw["rtsp_motion_gating_enabled"].lower() in ("true", "1", "yes")
+        if "rtsp_motion_threshold" in raw:
+            settings.RTSP_MOTION_THRESHOLD = float(raw["rtsp_motion_threshold"])
         if "rtsp_webhook_url" in raw:
             settings.RTSP_WEBHOOK_URL = raw["rtsp_webhook_url"]
         if "unrecognized_track_window_seconds" in raw:
@@ -923,7 +933,9 @@ def sync_settings_to_runtime():
             url=settings.RTSP_URL,
             camera_name=settings.RTSP_CAMERA_NAME,
             fps=settings.RTSP_FPS,
-            cooldown_seconds=settings.RTSP_COOLDOWN_SECONDS
+            cooldown_seconds=settings.RTSP_COOLDOWN_SECONDS,
+            motion_gating_enabled=settings.RTSP_MOTION_GATING_ENABLED,
+            motion_threshold=settings.RTSP_MOTION_THRESHOLD
         )
     except Exception as e:
         logger.warning("Error syncing settings to runtime: %s", e)

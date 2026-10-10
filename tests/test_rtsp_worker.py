@@ -35,7 +35,7 @@ from app.core.rtsp_worker import RtspStreamWorker
 
 # Rules for TestRtspWorker class:
 # 1. Variables and worker references must be declared at the top of the class.
-# 2. Tests verify streaming status reporting, cooldown suppression, inference rate limiting, webhook event dispatching, and unknown track best-shot aggregation.
+# 2. Tests verify streaming status reporting, cooldown suppression, inference rate limiting, webhook event dispatching, unknown track best-shot aggregation, and motion gating frame diff optimization.
 # 3. Mocks are isolated per test method to prevent state leakage.
 class TestRtspWorker(unittest.TestCase):
     worker: RtspStreamWorker = None
@@ -51,18 +51,25 @@ class TestRtspWorker(unittest.TestCase):
         self.assertFalse(status["is_connected"])
         self.assertEqual(status["camera_name"], "Test Camera")
         self.assertEqual(status["cooldown_seconds"], 10)
+        self.assertTrue(status["motion_gating_enabled"])
+        self.assertIn("motion_detected", status)
+        self.assertEqual(status["motion_threshold"], 0.015)
 
     def test_configuration_updates(self):
         self.worker.configure(
             url="rtsp://192.168.1.50:554/stream",
             camera_name="Driveway",
             fps=5.0,
-            cooldown_seconds=45
+            cooldown_seconds=45,
+            motion_gating_enabled=False,
+            motion_threshold=0.03
         )
         self.assertEqual(self.worker.url, "rtsp://192.168.1.50:554/stream")
         self.assertEqual(self.worker.camera_name, "Driveway")
         self.assertEqual(self.worker.fps, 5.0)
         self.assertEqual(self.worker.cooldown_seconds, 45)
+        self.assertFalse(self.worker.motion_gating_enabled)
+        self.assertEqual(self.worker.motion_threshold, 0.03)
 
     def test_cooldown_suppression_logic(self):
         # Initial state: no cooldowns
@@ -381,6 +388,66 @@ class TestRtspWorker(unittest.TestCase):
         self.assertEqual(mock_update.call_count, 1)
         # Track still retains the highest confidence 0.95 shot
         self.assertEqual(self.worker.unknown_tracks[0]["best_confidence"], 0.95)
+
+    def test_check_motion_initial_frame(self):
+        self.worker.prev_motion_frame = None
+        dummy_frame = MagicMock()
+        with patch("app.core.rtsp_worker.cv2") as mock_cv2:
+            mock_gray = MagicMock()
+            mock_gray.shape = (180, 320)
+            mock_cv2.GaussianBlur.return_value = mock_gray
+            result = self.worker._check_motion(dummy_frame)
+            self.assertTrue(result)
+            self.assertEqual(self.worker.prev_motion_frame, mock_gray)
+
+    def test_check_motion_suppressed_on_static_scene(self):
+        dummy_frame = MagicMock()
+        with patch("app.core.rtsp_worker.cv2") as mock_cv2:
+            mock_gray = MagicMock()
+            mock_gray.shape = (180, 320)
+            mock_cv2.GaussianBlur.return_value = mock_gray
+            self.worker.prev_motion_frame = mock_gray
+            
+            # 0 changed pixels -> ratio = 0.0 < 0.015
+            mock_thresh = MagicMock()
+            mock_thresh.shape = (180, 320)
+            mock_cv2.threshold.return_value = (25, mock_thresh)
+            mock_cv2.countNonZero.return_value = 0
+
+            result = self.worker._check_motion(dummy_frame)
+            self.assertFalse(result)
+
+    def test_check_motion_triggered_on_movement(self):
+        dummy_frame = MagicMock()
+        with patch("app.core.rtsp_worker.cv2") as mock_cv2:
+            mock_gray = MagicMock()
+            mock_gray.shape = (180, 320)
+            mock_cv2.GaussianBlur.return_value = mock_gray
+            self.worker.prev_motion_frame = mock_gray
+            
+            # 5,000 changed pixels out of 57,600 = ~8.6% > 1.5%
+            mock_thresh = MagicMock()
+            mock_thresh.shape = (180, 320)
+            mock_cv2.threshold.return_value = (25, mock_thresh)
+            mock_cv2.countNonZero.return_value = 5000
+
+            result = self.worker._check_motion(dummy_frame)
+            self.assertTrue(result)
+
+    def test_motion_hangover_window(self):
+        now = time.time()
+        self.worker.motion_gating_enabled = True
+        self.worker.motion_hangover_seconds = 2.5
+        self.worker.last_motion_time = now
+
+        # Within hangover window -> motion detected is True
+        status_recent = self.worker.get_status()
+        self.assertTrue(status_recent["motion_detected"])
+
+        # After hangover expires (5.0s ago) -> motion detected is False
+        self.worker.last_motion_time = now - 5.0
+        status_expired = self.worker.get_status()
+        self.assertFalse(status_expired["motion_detected"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/v1/settings", tags=["System Settings"])
 # 1. Variables and input schema fields must be declared at the top of the class.
 # 2. All settings fields must be optional to support partial updates.
 # 3. Numeric parameters must have valid bounds (e.g. ge, le) to guard against invalid engine configurations.
+# 4. Supports real-time motion gating and sensitivity thresholds to control CPU saving mode.
 class SettingsUpdateRequest(BaseModel):
     # Face Recognition
     face_detector_type: Optional[str] = Field(None, description="Detector engine: 'yolov8_face' or 'scrfd'")
@@ -33,6 +34,8 @@ class SettingsUpdateRequest(BaseModel):
     rtsp_camera_name: Optional[str] = Field(None, description="Display name for camera source")
     rtsp_fps: Optional[float] = Field(None, ge=0.5, le=15.0, description="Inference sampling frequency (FPS)")
     rtsp_cooldown_seconds: Optional[int] = Field(None, ge=1, le=3600, description="Cooldown per entity in seconds before repeating alert")
+    rtsp_motion_gating_enabled: Optional[bool] = Field(None, description="Enable motion-difference gating to skip face inference on static scenes")
+    rtsp_motion_threshold: Optional[float] = Field(None, ge=0.001, le=0.5, description="Fraction of frame pixel changes required to trigger motion (0.001-0.5, default 0.015)")
     rtsp_webhook_url: Optional[str] = Field(None, description="Outgoing webhook endpoint URL")
     webhook_only_known_faces: Optional[bool] = Field(None, description="Only dispatch outgoing webhooks when a recognized/known face is matched")
 

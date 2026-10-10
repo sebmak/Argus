@@ -76,12 +76,16 @@ class TestSettingsManagement(unittest.TestCase):
         self.assertIn("notify_on_unknown", all_settings)
         self.assertIn("unknown_min_confidence", all_settings)
         self.assertIn("rtsp_url", all_settings)
+        self.assertIn("rtsp_motion_gating_enabled", all_settings)
+        self.assertIn("rtsp_motion_threshold", all_settings)
         self.assertIn("webhook_only_known_faces", all_settings)
         self.assertIn("mqtt_enabled", all_settings)
 
         self.assertIsInstance(all_settings["notification_threshold"], float)
         self.assertIsInstance(all_settings["notify_on_unknown"], bool)
         self.assertIsInstance(all_settings["unknown_min_confidence"], float)
+        self.assertIsInstance(all_settings["rtsp_motion_gating_enabled"], bool)
+        self.assertIsInstance(all_settings["rtsp_motion_threshold"], float)
         self.assertIsInstance(all_settings["webhook_only_known_faces"], bool)
         self.assertIsInstance(all_settings["mqtt_only_known_faces"], bool)
 
@@ -95,6 +99,8 @@ class TestSettingsManagement(unittest.TestCase):
             "rtsp_camera_name": "Backyard Gate",
             "rtsp_fps": 4.5,
             "rtsp_cooldown_seconds": 60,
+            "rtsp_motion_gating_enabled": False,
+            "rtsp_motion_threshold": 0.025,
             "rtsp_webhook_url": "http://192.168.1.100:8123/webhook/gate",
             "webhook_only_known_faces": True,
             "mqtt_enabled": True,
@@ -115,6 +121,8 @@ class TestSettingsManagement(unittest.TestCase):
         self.assertEqual(result["rtsp_camera_name"], "Backyard Gate")
         self.assertEqual(result["rtsp_fps"], 4.5)
         self.assertEqual(result["rtsp_cooldown_seconds"], 60)
+        self.assertFalse(result["rtsp_motion_gating_enabled"])
+        self.assertEqual(result["rtsp_motion_threshold"], 0.025)
         self.assertEqual(result["rtsp_webhook_url"], "http://192.168.1.100:8123/webhook/gate")
         self.assertTrue(result["webhook_only_known_faces"])
         self.assertTrue(result["mqtt_enabled"])
@@ -131,6 +139,8 @@ class TestSettingsManagement(unittest.TestCase):
         self.assertEqual(settings.RTSP_CAMERA_NAME, "Backyard Gate")
         self.assertEqual(settings.RTSP_FPS, 4.5)
         self.assertEqual(settings.RTSP_COOLDOWN_SECONDS, 60)
+        self.assertFalse(settings.RTSP_MOTION_GATING_ENABLED)
+        self.assertEqual(settings.RTSP_MOTION_THRESHOLD, 0.025)
         self.assertEqual(settings.RTSP_WEBHOOK_URL, "http://192.168.1.100:8123/webhook/gate")
         self.assertTrue(settings.WEBHOOK_ONLY_KNOWN_FACES)
         self.assertTrue(settings.MQTT_ENABLED)

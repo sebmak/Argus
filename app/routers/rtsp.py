@@ -13,11 +13,14 @@ router = APIRouter(prefix="/api/v1/rtsp", tags=["RTSP Live Stream"])
 # 1. Variables and payload schema fields must be declared at the top of the class.
 # 2. All configuration fields must be optional to support partial updates.
 # 3. Numeric constraints must ensure valid operating ranges for FPS and alert cooldowns.
+# 4. Supports motion gating enable and sensitivity threshold tuning to reduce CPU consumption.
 class RtspConfigRequest(BaseModel):
     url: Optional[str] = Field(None, description="RTSP / RTSPS stream URL")
     camera_name: Optional[str] = Field(None, description="Display name for camera")
     fps: Optional[float] = Field(None, ge=0.5, le=15.0, description="Inference sampling frequency (FPS)")
     cooldown_seconds: Optional[int] = Field(None, ge=1, le=3600, description="Cooldown per entity in seconds")
+    motion_gating_enabled: Optional[bool] = Field(None, description="Skip inference when camera scene is motionless")
+    motion_threshold: Optional[float] = Field(None, ge=0.001, le=0.5, description="Pixel delta ratio threshold for motion")
     webhook_url: Optional[str] = Field(None, description="Outgoing webhook URL")
     webhook_only_known_faces: Optional[bool] = Field(None, description="Only dispatch outgoing webhooks when a recognized known face is matched")
     mqtt_enabled: Optional[bool] = Field(None, description="Enable or disable MQTT publishing")
@@ -68,6 +71,10 @@ async def update_rtsp_config(payload: RtspConfigRequest):
         updates["rtsp_fps"] = payload.fps
     if payload.cooldown_seconds is not None:
         updates["rtsp_cooldown_seconds"] = payload.cooldown_seconds
+    if payload.motion_gating_enabled is not None:
+        updates["rtsp_motion_gating_enabled"] = payload.motion_gating_enabled
+    if payload.motion_threshold is not None:
+        updates["rtsp_motion_threshold"] = payload.motion_threshold
     if payload.webhook_url is not None:
         updates["rtsp_webhook_url"] = payload.webhook_url.strip()
     if payload.webhook_only_known_faces is not None:
@@ -97,6 +104,8 @@ async def update_rtsp_config(payload: RtspConfigRequest):
             "camera_name": settings.RTSP_CAMERA_NAME,
             "fps": settings.RTSP_FPS,
             "cooldown_seconds": settings.RTSP_COOLDOWN_SECONDS,
+            "motion_gating_enabled": settings.RTSP_MOTION_GATING_ENABLED,
+            "motion_threshold": settings.RTSP_MOTION_THRESHOLD,
             "webhook_url": settings.RTSP_WEBHOOK_URL,
             "webhook_only_known_faces": settings.WEBHOOK_ONLY_KNOWN_FACES,
             "mqtt_enabled": settings.MQTT_ENABLED,

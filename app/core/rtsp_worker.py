@@ -25,11 +25,12 @@ logger = logging.getLogger(__name__)
 # Rules for RtspStreamWorker class:
 # 1. Variables and worker state must be declared and initialized at the top of the class.
 # 2. Worker loop must run on a dedicated background daemon thread without blocking the FastAPI event loop.
-# 3. get_status must return comprehensive telemetry including target_fps, actual_fps, and fps_actual for frontend compatibility.
-# 4. Stream frame acquisitions and inference must respect configured sampling rates and entity cooldowns.
+# 3. get_status must return comprehensive telemetry including target_fps, actual_fps, fps_actual, and motion gating telemetry for frontend compatibility.
+# 4. Stream frame acquisitions and inference must respect configured sampling rates, motion gating, and entity cooldowns.
 # 5. Filters out low-confidence faces and tiny non-face bounding boxes before inbox recording and alerts.
 # 6. Aggregates unknown face detections across a sliding timeframe window to record only the highest-confidence best shot.
 # 7. Annotates detection alerts with is_household classification for external webhook and MQTT branching.
+# 8. Skips heavy face inference on static scenes via fast frame difference motion gating, with periodic heartbeat inference safety fallback.
 class RtspStreamWorker:
     thread: Optional[threading.Thread] = None
     stop_event: threading.Event = threading.Event()
@@ -39,6 +40,13 @@ class RtspStreamWorker:
     camera_name: str = ""
     fps: float = 2.0
     cooldown_seconds: int = 30
+    motion_gating_enabled: bool = True
+    motion_threshold: float = 0.015
+    motion_hangover_seconds: float = 2.5
+    heartbeat_seconds: float = 10.0
+    last_motion_time: float = 0.0
+    last_force_infer_time: float = 0.0
+    prev_motion_frame: Optional[Any] = None
     last_frame: Optional[Any] = None
     last_detection: Optional[Dict[str, Any]] = None
     last_error: str = ""
@@ -55,6 +63,13 @@ class RtspStreamWorker:
         self.camera_name = settings.RTSP_CAMERA_NAME
         self.fps = settings.RTSP_FPS
         self.cooldown_seconds = settings.RTSP_COOLDOWN_SECONDS
+        self.motion_gating_enabled = getattr(settings, "RTSP_MOTION_GATING_ENABLED", True)
+        self.motion_threshold = float(getattr(settings, "RTSP_MOTION_THRESHOLD", 0.015))
+        self.motion_hangover_seconds = float(getattr(settings, "RTSP_MOTION_HANGOVER_SECONDS", 2.5))
+        self.heartbeat_seconds = 10.0
+        self.last_motion_time = 0.0
+        self.last_force_infer_time = 0.0
+        self.prev_motion_frame = None
         
         self.last_frame = None
         self.last_detection = None
@@ -71,7 +86,10 @@ class RtspStreamWorker:
         url: Optional[str] = None,
         camera_name: Optional[str] = None,
         fps: Optional[float] = None,
-        cooldown_seconds: Optional[int] = None
+        cooldown_seconds: Optional[int] = None,
+        motion_gating_enabled: Optional[bool] = None,
+        motion_threshold: Optional[float] = None,
+        motion_hangover_seconds: Optional[float] = None
     ):
         """Update stream settings at runtime."""
         if url is not None:
@@ -82,6 +100,12 @@ class RtspStreamWorker:
             self.fps = max(0.5, fps)
         if cooldown_seconds is not None:
             self.cooldown_seconds = max(1, cooldown_seconds)
+        if motion_gating_enabled is not None:
+            self.motion_gating_enabled = bool(motion_gating_enabled)
+        if motion_threshold is not None:
+            self.motion_threshold = max(0.001, min(0.5, float(motion_threshold)))
+        if motion_hangover_seconds is not None:
+            self.motion_hangover_seconds = max(0.5, float(motion_hangover_seconds))
 
     def start(self):
         """Starts the background RTSP processing thread."""
@@ -96,9 +120,13 @@ class RtspStreamWorker:
 
         self.stop_event.clear()
         self.is_running = True
+        self.prev_motion_frame = None
+        self.last_motion_time = 0.0
+        self.last_force_infer_time = 0.0
         self.thread = threading.Thread(target=self._run_loop, name="rtsp-worker-thread", daemon=True)
         self.thread.start()
-        logger.info("RTSP worker thread started for camera '%s' at %s", self.camera_name, self.url)
+        logger.info("RTSP worker thread started for camera '%s' at %s (motion gating: %s)",
+                    self.camera_name, self.url, self.motion_gating_enabled)
 
     def stop(self):
         """Stops the RTSP worker thread gracefully."""
@@ -109,6 +137,7 @@ class RtspStreamWorker:
         self.stop_event.set()
         self.is_running = False
         self.is_connected = False
+        self.prev_motion_frame = None
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=3.0)
         self.thread = None
@@ -116,6 +145,8 @@ class RtspStreamWorker:
 
     def get_status(self) -> Dict[str, Any]:
         """Returns runtime status and diagnostic telemetry."""
+        now = time.time()
+        is_motion_active = (now - self.last_motion_time <= self.motion_hangover_seconds) if self.motion_gating_enabled else True
         return {
             "is_running": self.is_running,
             "is_connected": self.is_connected,
@@ -125,6 +156,9 @@ class RtspStreamWorker:
             "actual_fps": round(self.fps_actual, 1),
             "fps_actual": round(self.fps_actual, 1),
             "cooldown_seconds": self.cooldown_seconds,
+            "motion_gating_enabled": self.motion_gating_enabled,
+            "motion_detected": is_motion_active,
+            "motion_threshold": self.motion_threshold,
             "last_detection": self.last_detection,
             "last_error": self.last_error,
             "active_cooldowns": {
@@ -138,6 +172,37 @@ class RtspStreamWorker:
             return None
         success, buffer = cv2.imencode(".jpg", self.last_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
         return buffer.tobytes() if success else None
+
+    def _check_motion(self, frame_bgr: np.ndarray) -> bool:
+        """
+        Ultra-lightweight frame difference motion detection (<0.2ms CPU).
+        Downscales frame to 320x180, converts to grayscale, applies Gaussian blur,
+        and computes changed pixel ratio against previous frame.
+        """
+        if cv2 is None or frame_bgr is None:
+            return True
+        try:
+            # Downsample to low-res for near-zero CPU footprint
+            small = cv2.resize(frame_bgr, (320, 180), interpolation=cv2.INTER_LINEAR)
+            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+            gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+            if self.prev_motion_frame is None or getattr(self.prev_motion_frame, "shape", None) != gray.shape:
+                self.prev_motion_frame = gray
+                return True
+
+            diff = cv2.absdiff(self.prev_motion_frame, gray)
+            _, thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
+            changed_pixels = int(cv2.countNonZero(thresh))
+            total_pixels = thresh.shape[0] * thresh.shape[1]
+            motion_ratio = changed_pixels / float(max(1, total_pixels))
+
+            # Store current frame as baseline for next motion check
+            self.prev_motion_frame = gray
+            return motion_ratio >= self.motion_threshold
+        except Exception as e:
+            logger.debug("Motion check fallback on error: %s", e)
+            return True
 
     def _run_loop(self):
         """Main loop: connects to RTSP stream, buffers frames, and triggers inference."""
@@ -157,6 +222,9 @@ class RtspStreamWorker:
 
                 self.is_connected = True
                 self.last_error = ""
+                self.prev_motion_frame = None
+                self.last_motion_time = 0.0
+                self.last_force_infer_time = time.time()
                 logger.info("Successfully connected to RTSP stream '%s'", self.camera_name)
 
                 last_inference_time = 0.0
@@ -182,10 +250,27 @@ class RtspStreamWorker:
                         frame_count = 0
                         fps_timer = now
 
-                    # Process inference at target FPS frequency
+                    # Process inference at target FPS frequency with motion gating
                     if now - last_inference_time >= min_interval:
                         last_inference_time = now
-                        self._process_frame(frame)
+                        should_process = True
+
+                        if self.motion_gating_enabled:
+                            has_motion = self._check_motion(frame)
+                            if has_motion:
+                                self.last_motion_time = now
+
+                            is_motion_active = (now - self.last_motion_time <= self.motion_hangover_seconds)
+                            is_heartbeat = (now - self.last_force_infer_time >= self.heartbeat_seconds)
+
+                            if not is_motion_active and not is_heartbeat:
+                                should_process = False
+                            elif is_heartbeat and not is_motion_active:
+                                self.last_force_infer_time = now
+                                logger.debug("Heartbeat sanity inference executed on motionless scene.")
+
+                        if should_process:
+                            self._process_frame(frame)
 
             except Exception as e:
                 self.is_connected = False

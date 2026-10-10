@@ -28,10 +28,11 @@ def _resolve_config_dir() -> str:
 # 2. Defaults are read from environment variables with safe fallbacks.
 # 3. Dynamic runtime overrides are synchronized with the SQLite settings table without container restarts.
 # 4. Supports detector engine selection ('yolov8_face' or 'scrfd') with dedicated YOLO model parameters.
+# 5. Configures real-time stream motion gating and threshold settings to optimize CPU usage on static video feeds.
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "Household Face Detection API"
-    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.12")
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.14")
     DEBUG: bool = False
 
     # Storage & Unraid Config Paths
@@ -69,6 +70,9 @@ class Settings(BaseSettings):
     RTSP_CAMERA_NAME: str = os.getenv("RTSP_CAMERA_NAME", "Front Door RTSP")
     RTSP_FPS: float = float(os.getenv("RTSP_FPS", "3.0"))  # Real-time inference frequency (2-5 FPS recommended)
     RTSP_COOLDOWN_SECONDS: int = int(os.getenv("RTSP_COOLDOWN_SECONDS", "30"))  # Cooldown per person before repeating event
+    RTSP_MOTION_GATING_ENABLED: bool = os.getenv("RTSP_MOTION_GATING_ENABLED", "true").lower() in ("true", "1", "yes")
+    RTSP_MOTION_THRESHOLD: float = float(os.getenv("RTSP_MOTION_THRESHOLD", "0.015"))  # Pixel diff ratio (default: 1.5%)
+    RTSP_MOTION_HANGOVER_SECONDS: float = float(os.getenv("RTSP_MOTION_HANGOVER_SECONDS", "2.5"))  # Infer for 2.5s post-motion
     RTSP_WEBHOOK_URL: str = os.getenv("RTSP_WEBHOOK_URL", "")  # Outgoing webhook URL (e.g. Home Assistant automation)
     WEBHOOK_ONLY_KNOWN_FACES: bool = os.getenv("WEBHOOK_ONLY_KNOWN_FACES", os.getenv("RTSP_WEBHOOK_ONLY_KNOWN", "true")).lower() in ("true", "1", "yes")  # Restrict outgoing webhooks strictly to known faces
 

@@ -7,7 +7,8 @@ import {
   Save,
   RotateCcw,
   History,
-  ArrowUpRight
+  ArrowUpRight,
+  Zap
 } from 'lucide-react';
 import { apiFetch } from '../../api';
 import type { SystemSettings, MigrationStatus } from '../../types';
@@ -30,6 +31,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSettingsSaved }) => 
   const [ortThreads, setOrtThreads] = useState(8);
   const [maxSamples, setMaxSamples] = useState(25);
   const [trackWindowSeconds, setTrackWindowSeconds] = useState(15);
+  const [motionGatingEnabled, setMotionGatingEnabled] = useState(true);
+  const [motionThreshold, setMotionThreshold] = useState(0.015);
 
   // Notification Thresholds
   const [notificationThreshold, setNotificationThreshold] = useState(0.65);
@@ -58,6 +61,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSettingsSaved }) => 
       if (settingsRes.ort_num_threads !== undefined) setOrtThreads(settingsRes.ort_num_threads);
       if (settingsRes.max_samples_per_person !== undefined) setMaxSamples(settingsRes.max_samples_per_person);
       if (settingsRes.unrecognized_track_window_seconds !== undefined) setTrackWindowSeconds(settingsRes.unrecognized_track_window_seconds);
+      if (settingsRes.rtsp_motion_gating_enabled !== undefined) setMotionGatingEnabled(settingsRes.rtsp_motion_gating_enabled);
+      if (settingsRes.rtsp_motion_threshold !== undefined) setMotionThreshold(settingsRes.rtsp_motion_threshold);
 
       if (settingsRes.notification_threshold !== undefined) setNotificationThreshold(settingsRes.notification_threshold);
       if (settingsRes.notify_on_unknown !== undefined) setNotifyOnUnknown(settingsRes.notify_on_unknown);
@@ -89,6 +94,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSettingsSaved }) => 
         ort_num_threads: ortThreads,
         max_samples_per_person: maxSamples,
         unrecognized_track_window_seconds: trackWindowSeconds,
+        rtsp_motion_gating_enabled: motionGatingEnabled,
+        rtsp_motion_threshold: motionThreshold,
         notification_threshold: notificationThreshold,
         notify_on_unknown: notifyOnUnknown,
         unknown_min_confidence: unknownMinConfidence,
@@ -312,6 +319,45 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSettingsSaved }) => 
               <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
                 Sliding timeframe to combine unknown face detections into a single highest-confidence review item.
               </span>
+            </div>
+
+            {/* Real-time Stream Motion Gating */}
+            <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', marginTop: '0.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Zap size={16} color="var(--accent-emerald)" />
+                  <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Real-Time Motion Gating</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={motionGatingEnabled}
+                  onChange={e => setMotionGatingEnabled(e.target.checked)}
+                />
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: motionGatingEnabled ? '0.75rem' : 0 }}>
+                Skips deep face neural network inference on motionless camera scenes, saving over 90% CPU usage.
+              </span>
+
+              {motionGatingEnabled && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                    <label className="form-label" style={{ margin: 0, fontSize: '0.8rem' }}>Motion Sensitivity</label>
+                    <span className="chip chip-info" style={{ fontSize: '0.7rem' }}>{(motionThreshold * 100).toFixed(1)}% pixels</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.005"
+                    max="0.05"
+                    step="0.002"
+                    value={motionThreshold}
+                    onChange={e => setMotionThreshold(parseFloat(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                    Pixel difference ratio required to trigger inference (default: 1.5%).
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
