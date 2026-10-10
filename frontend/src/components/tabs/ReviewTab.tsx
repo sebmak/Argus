@@ -32,6 +32,7 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
   // Assign modal state
   const [selectedPersonId, setSelectedPersonId] = useState<string>('');
   const [newPersonName, setNewPersonName] = useState<string>('');
+  const [newIsHousehold, setNewIsHousehold] = useState<boolean>(true);
   const [assignMode, setAssignMode] = useState<'existing' | 'new'>('existing');
   const [assigning, setAssigning] = useState(false);
 
@@ -112,6 +113,7 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
   const openAssignModal = (detection: Detection) => {
     setActiveDetection(detection);
     setNewPersonName('');
+    setNewIsHousehold(true);
     if (persons.length > 0) {
       setSelectedPersonId(persons[0].id);
       setAssignMode('existing');
@@ -138,7 +140,7 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
     try {
       const payload = assignMode === 'existing'
         ? { person_id: selectedPersonId }
-        : { new_person_name: newPersonName.trim() };
+        : { new_person_name: newPersonName.trim(), is_household: newIsHousehold };
 
       const res = await apiFetch<{ status: string; message: string; person_name: string }>(
         `/api/v1/detections/${activeDetection.id}/assign`,
@@ -393,7 +395,7 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
             <form onSubmit={handleAssignSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {assignMode === 'existing' ? (
                 <div>
-                  <label className="form-label">Select Household Member</label>
+                  <label className="form-label">Select Registered Person</label>
                   {persons.length === 0 ? (
                     <div style={{ fontSize: '0.8rem', color: 'var(--accent-amber)', padding: '0.5rem 0' }}>
                       No members registered yet. Switch to "New Person" to create one.
@@ -406,24 +408,48 @@ export const ReviewTab: React.FC<ReviewTabProps> = ({ onAssignmentComplete }) =>
                     >
                       {persons.map(p => (
                         <option key={p.id} value={p.id}>
-                          {p.name} ({p.sample_count} sample{p.sample_count === 1 ? '' : 's'})
+                          {p.name} {p.is_household === false ? '(Visitor)' : '(Household)'} ({p.sample_count} sample{p.sample_count === 1 ? '' : 's'})
                         </option>
                       ))}
                     </select>
                   )}
                 </div>
               ) : (
-                <div>
-                  <label className="form-label">New Person Name</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g. John Doe"
-                    value={newPersonName}
-                    onChange={e => setNewPersonName(e.target.value)}
-                    autoFocus
-                    required
-                  />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <label className="form-label">Classification</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.25rem' }}>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${newIsHousehold ? 'btn-primary' : 'btn-secondary'}`}
+                        style={newIsHousehold ? { background: 'var(--accent-emerald)', borderColor: 'var(--accent-emerald)', justifyContent: 'center' } : { justifyContent: 'center' }}
+                        onClick={() => setNewIsHousehold(true)}
+                      >
+                        Household Member
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${!newIsHousehold ? 'btn-primary' : 'btn-secondary'}`}
+                        style={!newIsHousehold ? { background: 'var(--accent-purple)', borderColor: 'var(--accent-purple)', justifyContent: 'center' } : { justifyContent: 'center' }}
+                        onClick={() => setNewIsHousehold(false)}
+                      >
+                        Visitor / Guest
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="form-label">New Person Name *</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. John Doe"
+                      value={newPersonName}
+                      onChange={e => setNewPersonName(e.target.value)}
+                      autoFocus
+                      required
+                    />
+                  </div>
                 </div>
               )}
 

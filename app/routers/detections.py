@@ -26,10 +26,12 @@ router = APIRouter(prefix="/api/v1/detections", tags=["Detections Queue"])
 # Rules for AssignDetectionRequest:
 # 1. Variables and data schema properties must be declared at the top of the class.
 # 2. Encapsulates request parameters for assigning detections to existing or new members.
+# 3. Supports classifying newly created persons as household or non-household members.
 # ==============================================================================
 class AssignDetectionRequest(BaseModel):
     person_id: Optional[str] = Field(None, description="ID of existing person to assign to")
     new_person_name: Optional[str] = Field(None, description="Name for newly created person if not existing")
+    is_household: Optional[bool] = Field(True, description="Classification for newly created person (True=household, False=non-household/visitor)")
 
 @router.get("/unrecognized")
 async def list_unrecognized_detections(limit: int = 50, offset: int = 0):
@@ -68,7 +70,12 @@ async def assign_detection(detection_id: str, payload: AssignDetectionRequest):
         if existing:
             target_person_id = existing["id"]
         else:
-            new_p = create_person(name_clean, notes="Created from unrecognized review inbox")
+            is_hh = payload.is_household if payload.is_household is not None else True
+            new_p = create_person(
+                name_clean,
+                notes="Created from unrecognized review inbox",
+                is_household=is_hh
+            )
             target_person_id = new_p["id"]
 
     if not target_person_id:

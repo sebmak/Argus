@@ -34,6 +34,7 @@ from app.db.database import (
     create_person,
     get_all_persons,
     get_person_by_id,
+    update_person,
     delete_person,
     add_face_sample,
     get_all_active_embeddings,
@@ -63,8 +64,8 @@ from app.db.migrations import (
 # ==============================================================================
 # Rules for TestEndToEndSystemIntegration:
 # 1. Tests complete lifecycle: migrations, authentication, enrollment, matching,
-#    notification suppression for unknown detections, inbox triage, deduplication, runtime settings,
-#    and rollback safety.
+#    household vs visitor classification, notification suppression for unknown detections,
+#    inbox triage, deduplication, runtime settings, and rollback safety.
 # 2. Member variables must be declared at the top of the class.
 # 3. Uses isolated temporary test directory and cleans up upon completion.
 # ==============================================================================
@@ -99,7 +100,7 @@ class TestEndToEndSystemIntegration(unittest.TestCase):
     def test_01_database_and_admin_auth(self):
         """Verify DB migrations initialized all tables and seeded default admin."""
         status = get_migration_status()
-        self.assertEqual(status["database_version"], "1.1.0")
+        self.assertEqual(status["database_version"], "1.2.0")
 
         # Admin user authentication
         admin = verify_user_credentials("admin", "admin123")
@@ -328,23 +329,25 @@ class TestEndToEndSystemIntegration(unittest.TestCase):
         self.assertAlmostEqual(settings.SIMILARITY_THRESHOLD, 0.52, places=2)
 
     def test_08_schema_rollback_and_recovery(self):
-        """Test non-destructive migration rollback to 1.0.0 and subsequent restoration to 1.1.0."""
+        """Test non-destructive migration rollback to 1.0.0 and subsequent restoration to 1.2.0."""
         # Rollback to 1.0.0
         res_down = rollback_migrations("1.0.0")
         self.assertEqual(res_down["status"], "success")
         self.assertEqual(res_down["current_app_version"], "1.0.0")
         self.assertIn("dynamic_settings_and_telemetry", res_down["rolled_back"])
+        self.assertIn("household_and_visitor_classification", res_down["rolled_back"])
 
         # Verify core persons remain safe after rollback
         persons = get_all_persons()
         alice = [p for p in persons if p["name"] == "Alice Resident"]
         self.assertEqual(len(alice), 1)
 
-        # Roll forward back to 1.1.0
-        res_up = run_migrations("1.1.0")
+        # Roll forward back to 1.2.0
+        res_up = run_migrations("1.2.0")
         self.assertEqual(res_up["status"], "success")
-        self.assertEqual(res_up["current_app_version"], "1.1.0")
+        self.assertEqual(res_up["current_app_version"], "1.2.0")
         self.assertIn("dynamic_settings_and_telemetry", res_up["applied"])
+        self.assertIn("household_and_visitor_classification", res_up["applied"])
 
     def test_09_unrecognized_deduplication_and_best_shot(self):
         """Test deduplicating burst unrecognized frames into highest confidence best-shots."""
@@ -382,6 +385,109 @@ class TestEndToEndSystemIntegration(unittest.TestCase):
         self.assertEqual(backyard_queue[0]["id"], id2)
         self.assertEqual(backyard_queue[0]["thumbnail_path"], "unk_shot_2_best.jpg")
         self.assertEqual(backyard_queue[0]["confidence"], 0.97)
+
+    def test_10_household_and_visitor_events_and_classification(self):
+        """Test RTSP and webhook detection events propagate is_household classification."""
+        from unittest.mock import patch, MagicMock
+
+        # 1. Create a resident (household) and a visitor (non-household)
+        resident = create_person("Emma Resident", notes="Family daughter", is_household=True)
+        visitor = create_person("FedEx Driver", notes="Delivery courier", is_household=False)
+
+        self.assertTrue(resident["is_household"])
+        self.assertFalse(visitor["is_household"])
+
+        # 2. Verify RTSP worker event dispatch carries is_household=True for resident
+        self.worker.camera_name = "Driveway"
+        with patch("app.core.rtsp_worker.dispatch_detection_event") as mock_dispatch:
+            frame = MagicMock()
+            with patch("app.core.rtsp_worker.face_engine.detect_and_embed") as mock_detect, \
+                 patch("app.core.rtsp_worker.face_engine.match_face") as mock_match:
+
+                mock_detect.return_value = [
+                    MagicMock(bbox=[10, 10, 60, 60], confidence=0.92, embedding=np.zeros(512), thumbnail_filename="thumb_res.jpg")
+                ]
+                mock_match.return_value = {
+                    "match": True,
+                    "person_id": resident["id"],
+                    "name": "Emma Resident",
+                    "similarity": 0.85,
+                    "distance": 0.15,
+                    "is_household": True
+                }
+
+                self.worker._process_frame(frame)
+
+                self.assertTrue(mock_dispatch.called)
+                event_args = mock_dispatch.call_args[0][0]
+                self.assertEqual(event_args["person_name"], "Emma Resident")
+                self.assertTrue(event_args["match"])
+                self.assertTrue(event_args["is_household"])
+
+        # 3. Verify RTSP worker event dispatch carries is_household=False for visitor
+        with patch("app.core.rtsp_worker.dispatch_detection_event") as mock_dispatch_vis:
+            frame = MagicMock()
+            with patch("app.core.rtsp_worker.face_engine.detect_and_embed") as mock_detect, \
+                 patch("app.core.rtsp_worker.face_engine.match_face") as mock_match:
+
+                mock_detect.return_value = [
+                    MagicMock(bbox=[10, 10, 60, 60], confidence=0.89, embedding=np.zeros(512), thumbnail_filename="thumb_vis.jpg")
+                ]
+                mock_match.return_value = {
+                    "match": True,
+                    "person_id": visitor["id"],
+                    "name": "FedEx Driver",
+                    "similarity": 0.78,
+                    "distance": 0.22,
+                    "is_household": False
+                }
+
+                # Clear cooldown for Driveway camera to allow fresh event
+                self.worker.cooldowns.clear()
+                self.worker._process_frame(frame)
+
+                self.assertTrue(mock_dispatch_vis.called)
+                vis_event_args = mock_dispatch_vis.call_args[0][0]
+                self.assertEqual(vis_event_args["person_name"], "FedEx Driver")
+                self.assertTrue(vis_event_args["match"])
+                self.assertFalse(vis_event_args["is_household"])
+
+        # 4. Verify RTSP worker event dispatch carries is_household=False for unrecognized face
+        orig_webhook = settings.RTSP_WEBHOOK_URL
+        orig_only_known = settings.WEBHOOK_ONLY_KNOWN_FACES
+        orig_notify_unk = settings.NOTIFY_ON_UNKNOWN
+        settings.RTSP_WEBHOOK_URL = "http://example.com/webhook"
+        settings.WEBHOOK_ONLY_KNOWN_FACES = False
+        settings.NOTIFY_ON_UNKNOWN = True
+        try:
+            with patch("app.core.rtsp_worker.dispatch_detection_event") as mock_dispatch_unk:
+                frame = MagicMock()
+                with patch("app.core.rtsp_worker.face_engine.detect_and_embed") as mock_detect, \
+                     patch("app.core.rtsp_worker.face_engine.match_face") as mock_match:
+
+                    mock_detect.return_value = [
+                        MagicMock(bbox=[10, 10, 60, 60], confidence=0.88, embedding=np.zeros(512), thumbnail_filename="thumb_unk.jpg")
+                    ]
+                    mock_match.return_value = {
+                        "match": False,
+                        "person_id": None,
+                        "name": None,
+                        "similarity": 0.22,
+                        "distance": 0.78,
+                        "is_household": False
+                    }
+
+                    self.worker.cooldowns.clear()
+                    self.worker._process_frame(frame)
+
+                    self.assertTrue(mock_dispatch_unk.called)
+                    unk_event_args = mock_dispatch_unk.call_args[0][0]
+                    self.assertFalse(unk_event_args["match"])
+                    self.assertFalse(unk_event_args["is_household"])
+        finally:
+            settings.RTSP_WEBHOOK_URL = orig_webhook
+            settings.WEBHOOK_ONLY_KNOWN_FACES = orig_only_known
+            settings.NOTIFY_ON_UNKNOWN = orig_notify_unk
 
 
 if __name__ == "__main__":

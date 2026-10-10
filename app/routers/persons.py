@@ -9,6 +9,7 @@ from ..db.database import (
     get_person_by_id,
     get_person_by_name,
     create_person,
+    update_person,
     delete_person,
     add_face_sample,
     delete_face_sample
@@ -17,17 +18,38 @@ from ..db.database import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/persons", tags=["Persons"])
 
+# ==============================================================================
+# Rules for CreatePersonRequest:
+# 1. Variables must be defined at the top of the class.
+# 2. Name is mandatory; notes, is_household, and initial_image are optional with sensible defaults.
+# ==============================================================================
 class CreatePersonRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     notes: Optional[str] = Field("", max_length=500)
+    is_household: Optional[bool] = Field(True, description="True for household member, False for visitor / non-household member")
     initial_image: Optional[str] = Field(None, description="Optional base64 image to immediately train face")
 
+# ==============================================================================
+# Rules for UpdatePersonRequest:
+# 1. Variables must be defined at the top of the class.
+# 2. All fields are optional to allow partial updates of name, notes, and household status.
+# ==============================================================================
+class UpdatePersonRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    notes: Optional[str] = Field(None, max_length=500)
+    is_household: Optional[bool] = Field(None, description="Update household status (True=household, False=non-household/visitor)")
+
+# ==============================================================================
+# Rules for AddSampleRequest:
+# 1. Variables must be defined at the top of the class.
+# 2. image must contain a valid base64 encoded face image.
+# ==============================================================================
 class AddSampleRequest(BaseModel):
     image: str = Field(..., description="Base64 encoded image containing face")
 
 @router.get("")
 async def list_persons():
-    """List all registered household members with sample statistics."""
+    """List all registered household and visitor members with sample statistics."""
     persons = get_all_persons()
     for p in persons:
         if p.get("primary_thumbnail"):
@@ -44,7 +66,8 @@ async def register_person(payload: CreatePersonRequest):
             detail=f"Person with name '{payload.name}' already exists."
         )
 
-    person = create_person(payload.name, payload.notes or "")
+    is_hh = payload.is_household if payload.is_household is not None else True
+    person = create_person(payload.name, payload.notes or "", is_household=is_hh)
     
     # Process initial sample if provided
     samples_added = 0
@@ -82,6 +105,24 @@ async def get_person_details(person_id: str):
         sample["thumbnail_url"] = f"/api/v1/thumbnails/{sample['thumbnail_path']}"
 
     return person
+
+@router.patch("/{person_id}")
+async def modify_person(person_id: str, payload: UpdatePersonRequest):
+    """Update person details, including household/visitor classification."""
+    person = get_person_by_id(person_id)
+    if not person:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+
+    updated = update_person(
+        person_id=person_id,
+        name=payload.name,
+        notes=payload.notes,
+        is_household=payload.is_household
+    )
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found or update failed")
+
+    return {"status": "success", "person": updated}
 
 @router.post("/{person_id}/samples", status_code=status.HTTP_201_CREATED)
 async def upload_person_sample(person_id: str, payload: AddSampleRequest):

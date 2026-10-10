@@ -154,12 +154,12 @@ def init_db(target_version: Optional[str] = None) -> Dict[str, Any]:
 # --- Person Helpers ---
 
 def get_all_persons() -> List[Dict[str, Any]]:
-    """Retrieve all persons with their sample count and primary thumbnail."""
+    """Retrieve all persons with their sample count, primary thumbnail, and household status."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT 
-                p.id, p.name, p.notes, p.created_at, p.updated_at,
+                p.id, p.name, p.notes, p.is_household, p.created_at, p.updated_at,
                 COUNT(s.id) AS sample_count,
                 (SELECT thumbnail_path FROM face_samples WHERE person_id = p.id ORDER BY created_at DESC LIMIT 1) AS primary_thumbnail,
                 (SELECT timestamp FROM detections WHERE matched_person_id = p.id ORDER BY timestamp DESC LIMIT 1) AS last_seen
@@ -169,10 +169,15 @@ def get_all_persons() -> List[Dict[str, Any]]:
             ORDER BY p.name ASC
         """)
         rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        persons = []
+        for row in rows:
+            p = dict(row)
+            p["is_household"] = bool(p["is_household"]) if p.get("is_household") is not None else True
+            persons.append(p)
+        return persons
 
 def get_person_by_id(person_id: str) -> Optional[Dict[str, Any]]:
-    """Get a single person by ID with sample details."""
+    """Get a single person by ID with sample details and household status."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM persons WHERE id = ?", (person_id,))
@@ -180,6 +185,7 @@ def get_person_by_id(person_id: str) -> Optional[Dict[str, Any]]:
         if not row:
             return None
         person = dict(row)
+        person["is_household"] = bool(person["is_household"]) if person.get("is_household") is not None else True
         
         # Get samples
         cursor.execute("SELECT id, thumbnail_path, source, camera_id, created_at FROM face_samples WHERE person_id = ? ORDER BY created_at DESC", (person_id,))
@@ -188,25 +194,63 @@ def get_person_by_id(person_id: str) -> Optional[Dict[str, Any]]:
         return person
 
 def get_person_by_name(name: str) -> Optional[Dict[str, Any]]:
-    """Find a person by exact name (case-insensitive)."""
+    """Find a person by exact name (case-insensitive) with household status."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM persons WHERE LOWER(name) = LOWER(?)", (name.strip(),))
         row = cursor.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        person = dict(row)
+        person["is_household"] = bool(person["is_household"]) if person.get("is_household") is not None else True
+        return person
 
-def create_person(name: str, notes: str = "") -> Dict[str, Any]:
-    """Create a new person entry."""
+def create_person(name: str, notes: str = "", is_household: bool = True) -> Dict[str, Any]:
+    """Create a new person entry with household classification."""
     name_clean = name.strip()
     person_id = f"p_{uuid.uuid4().hex[:12]}"
+    hh_val = 1 if is_household else 0
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO persons (id, name, notes, created_at, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-            (person_id, name_clean, notes)
+            "INSERT INTO persons (id, name, notes, is_household, created_at, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            (person_id, name_clean, notes, hh_val)
         )
         conn.commit()
-    return {"id": person_id, "name": name_clean, "notes": notes, "sample_count": 0}
+    return {"id": person_id, "name": name_clean, "notes": notes, "is_household": is_household, "sample_count": 0}
+
+def update_person(
+    person_id: str,
+    name: Optional[str] = None,
+    notes: Optional[str] = None,
+    is_household: Optional[bool] = None
+) -> Optional[Dict[str, Any]]:
+    """Updates a person's name, notes, or household status."""
+    person = get_person_by_id(person_id)
+    if not person:
+        return None
+
+    updates = []
+    params = []
+    if name is not None and name.strip():
+        updates.append("name = ?")
+        params.append(name.strip())
+    if notes is not None:
+        updates.append("notes = ?")
+        params.append(notes.strip())
+    if is_household is not None:
+        updates.append("is_household = ?")
+        params.append(1 if is_household else 0)
+
+    if updates:
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(person_id)
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id = ?", params)
+            conn.commit()
+
+    return get_person_by_id(person_id)
 
 def delete_person(person_id: str) -> bool:
     """Delete a person and all their associated face samples."""
@@ -268,12 +312,13 @@ def get_person_samples(person_id: str) -> List[Dict[str, Any]]:
 
 def get_all_active_embeddings() -> Dict[str, Dict[str, Any]]:
     """
-    Returns all persons with their stored embedding vectors and computed centroid.
+    Returns all persons with their stored embedding vectors, computed centroid, and household classification.
     Format:
     {
        person_id: {
            "id": person_id,
            "name": "Sebastian",
+           "is_household": True,
            "embeddings": [np.ndarray, ...],
            "centroid": np.ndarray
        }
@@ -282,7 +327,7 @@ def get_all_active_embeddings() -> Dict[str, Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT p.id, p.name, s.embedding 
+            SELECT p.id, p.name, p.is_household, s.embedding 
             FROM persons p
             JOIN face_samples s ON p.id = s.person_id
         """)
@@ -292,9 +337,11 @@ def get_all_active_embeddings() -> Dict[str, Dict[str, Any]]:
         for row in rows:
             p_id = row["id"]
             if p_id not in result:
+                is_hh = bool(row["is_household"]) if "is_household" in row.keys() and row["is_household"] is not None else True
                 result[p_id] = {
                     "id": p_id,
                     "name": row["name"],
+                    "is_household": is_hh,
                     "embeddings": []
                 }
             vector = np.frombuffer(row["embedding"], dtype=np.float32)
@@ -330,21 +377,30 @@ def record_detection(
     matched_name: Optional[str] = None,
     similarity: float = 0.0,
     status: str = "matched",
-    confidence: float = 1.0
+    confidence: float = 1.0,
+    is_household: Optional[bool] = None
 ) -> str:
-    """Record a face detection event with detection confidence."""
+    """Record a face detection event with detection confidence and household classification."""
     detection_id = f"det_{uuid.uuid4().hex[:12]}"
+    hh_val = None
+    if is_household is not None:
+        hh_val = 1 if is_household else 0
+    elif matched_person_id is not None:
+        person = get_person_by_id(matched_person_id)
+        if person:
+            hh_val = 1 if person.get("is_household", True) else 0
+
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO detections (
                 id, timestamp, camera_id, thumbnail_path, bbox, 
-                matched_person_id, matched_name, similarity, status, confidence, created_at
+                matched_person_id, matched_name, similarity, status, confidence, is_household, created_at
             )
-            VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """, (
             detection_id, camera_id, thumbnail_path, json.dumps(bbox),
-            matched_person_id, matched_name, similarity, status, float(confidence)
+            matched_person_id, matched_name, similarity, status, float(confidence), hh_val
         ))
         conn.commit()
     return detection_id
@@ -517,19 +573,20 @@ def deduplicate_unrecognized_detections(time_window_seconds: int = 20) -> Dict[s
         }
 
 def assign_detection_to_person(detection_id: str, person_id: str) -> bool:
-    """Mark an unrecognized detection as assigned to a person."""
+    """Mark an unrecognized detection as assigned to a person, adopting their household status."""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM persons WHERE id = ?", (person_id,))
+        cursor.execute("SELECT name, is_household FROM persons WHERE id = ?", (person_id,))
         person_row = cursor.fetchone()
         if not person_row:
             return False
             
+        is_hh = bool(person_row["is_household"]) if "is_household" in person_row.keys() and person_row["is_household"] is not None else True
         cursor.execute("""
             UPDATE detections 
-            SET status = 'assigned', matched_person_id = ?, matched_name = ?
+            SET status = 'assigned', matched_person_id = ?, matched_name = ?, is_household = ?
             WHERE id = ?
-        """, (person_id, person_row["name"], detection_id))
+        """, (person_id, person_row["name"], 1 if is_hh else 0, detection_id))
         conn.commit()
         return cursor.rowcount > 0
 
@@ -550,6 +607,12 @@ def get_system_stats() -> Dict[str, Any]:
         
         cursor.execute("SELECT COUNT(*) FROM persons")
         total_persons = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM persons WHERE is_household = 1 OR is_household IS NULL")
+        household_count = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM persons WHERE is_household = 0")
+        visitor_count = cursor.fetchone()[0]
         
         cursor.execute("SELECT COUNT(*) FROM face_samples")
         total_samples = cursor.fetchone()[0]
@@ -567,15 +630,21 @@ def get_system_stats() -> Dict[str, Any]:
 
         # Recent 10 activity records
         cursor.execute("""
-            SELECT id, timestamp, camera_id, thumbnail_path, matched_name, similarity, status
+            SELECT id, timestamp, camera_id, thumbnail_path, matched_name, similarity, status, is_household
             FROM detections
             ORDER BY timestamp DESC
             LIMIT 10
         """)
-        recent_activity = [dict(row) for row in cursor.fetchall()]
+        recent_activity = []
+        for row in cursor.fetchall():
+            rec = dict(row)
+            rec["is_household"] = bool(rec["is_household"]) if rec.get("is_household") is not None else None
+            recent_activity.append(rec)
 
         return {
             "total_persons": total_persons,
+            "household_count": household_count,
+            "visitor_count": visitor_count,
             "total_samples": total_samples,
             "unrecognized_count": unrecognized_count,
             "detections_today": detections_today,

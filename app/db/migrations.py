@@ -192,6 +192,12 @@ class MigrationManager:
                     "INSERT OR IGNORE INTO schema_migrations (migration_id, app_version, name) VALUES (?, ?, ?)",
                     (2, "1.1.0", "dynamic_settings_and_telemetry")
                 )
+            if table_exists(conn, "persons") and column_exists(conn, "persons", "is_household"):
+                logger.info("Detected pre-existing is_household column; backfilling migration 3 (v1.2.0)...")
+                conn.execute(
+                    "INSERT OR IGNORE INTO schema_migrations (migration_id, app_version, name) VALUES (?, ?, ?)",
+                    (3, "1.2.0", "household_and_visitor_classification")
+                )
             conn.commit()
 
     def get_applied_migrations(self, conn: sqlite3.Connection) -> List[Dict[str, Any]]:
@@ -449,6 +455,34 @@ class MigrationManager:
             description="Adds SQLite settings storage and detection confidence telemetry.",
             up_fn=up_v1_1_0,
             down_fn=down_v1_1_0
+        ))
+
+        # ----------------------------------------------------------------------
+        # Migration 3 (v1.2.0): Household and Visitor Classification
+        # ----------------------------------------------------------------------
+        def up_v1_2_0(conn: sqlite3.Connection):
+            cursor = conn.cursor()
+            # 1. Add is_household column to persons table (default 1 for household)
+            add_column_if_missing(conn, "persons", "is_household", "INTEGER", default="1")
+
+            # 2. Add is_household column to detections table
+            add_column_if_missing(conn, "detections", "is_household", "INTEGER", default="NULL")
+
+            # 3. Add index on persons(is_household) for rapid filtering
+            if table_exists(conn, "persons"):
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_persons_household ON persons(is_household);")
+
+        def down_v1_2_0(conn: sqlite3.Connection):
+            # Non-destructive rollback: drop index, preserve data in columns
+            conn.execute("DROP INDEX IF EXISTS idx_persons_household;")
+
+        self.register(MigrationStep(
+            migration_id=3,
+            version_tag="1.2.0",
+            name="household_and_visitor_classification",
+            description="Adds is_household classification to persons and detections.",
+            up_fn=up_v1_2_0,
+            down_fn=down_v1_2_0
         ))
 
 

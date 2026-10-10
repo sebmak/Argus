@@ -16,6 +16,7 @@ export interface Person {
   id: string;
   name: string;
   notes?: string;
+  is_household?: boolean;
   sample_count: number;
   primary_thumbnail?: string;
   created_at: string;
@@ -33,6 +34,7 @@ export interface Detection {
   similarity?: number;
   matched_person_id?: string;
   matched_name?: string;
+  is_household?: boolean | null;
   status: 'matched' | 'unrecognized' | 'dismissed';
   bbox?: number[];
 }
@@ -43,6 +45,7 @@ export interface RecentActivity {
   thumbnail_url?: string;
   camera_id: string;
   matched_name?: string;
+  is_household?: boolean;
   status: string;
   similarity?: number;
   timestamp: string;
@@ -50,6 +53,8 @@ export interface RecentActivity {
 
 export interface SystemStats {
   total_persons: number;
+  household_count?: number;
+  visitor_count?: number;
   total_samples: number;
   unrecognized_count: number;
   accuracy_rate: number;
@@ -106,6 +111,7 @@ export interface RtspStatus {
   last_detection?: {
     person_name: string;
     match: boolean;
+    is_household?: boolean;
     similarity: number;
     timestamp: number;
     thumbnail_url?: string;
@@ -152,6 +158,7 @@ export interface SandboxFace {
   similarity: number;
   distance: number;
   match: boolean;
+  is_household?: boolean;
   thumbnail_url?: string;
   sample_count?: number;
   person_id?: string | null;

@@ -15,6 +15,7 @@ from app.config import settings
 from app.db.database import (
     init_db,
     create_person,
+    update_person,
     get_all_persons,
     get_person_by_id,
     delete_person,
@@ -33,7 +34,7 @@ from app.db.database import (
 
 # ==============================================================================
 # Rules for TestDatabaseAndAPIIntegration:
-# 1. Tests SQLite data layer, household member CRUD, embedding centroids, detection inbox, and deduplication best-shots.
+# 1. Tests SQLite data layer, household vs visitor classification, member CRUD, embedding centroids, detection inbox, and deduplication best-shots.
 # 2. Member variables must be declared at the top of the class.
 # 3. Uses isolated temporary directories for test databases and cleans up afterwards.
 # ==============================================================================
@@ -209,6 +210,45 @@ class TestDatabaseAndAPIIntegration(unittest.TestCase):
         self.assertEqual(len(kept_driveway), 1)
         self.assertEqual(kept_driveway[0]["id"], d2)
         self.assertEqual(kept_driveway[0]["confidence"], 0.94)
+
+    def test_household_and_visitor_classification(self):
+        """Test classifying persons as household or non-household visitors, and stats breakdown."""
+        # 1. Create a household member (default is_household=True)
+        hh_person = create_person("Mom", notes="Household matriarch", is_household=True)
+        self.assertTrue(hh_person["is_household"])
+
+        # 2. Create a non-household visitor (is_household=False)
+        visitor = create_person("Mail Carrier", notes="Regular delivery courier", is_household=False)
+        self.assertFalse(visitor["is_household"])
+
+        # 3. Retrieve by ID and check is_household
+        hh_fetched = get_person_by_id(hh_person["id"])
+        self.assertTrue(hh_fetched["is_household"])
+
+        vis_fetched = get_person_by_id(visitor["id"])
+        self.assertFalse(vis_fetched["is_household"])
+
+        # 4. Update classification of visitor to household member
+        updated = update_person(visitor["id"], is_household=True, notes="Promoted to trusted resident")
+        self.assertTrue(updated["is_household"])
+        self.assertEqual(updated["notes"], "Promoted to trusted resident")
+
+        # 5. Switch back to visitor
+        updated2 = update_person(visitor["id"], is_household=False)
+        self.assertFalse(updated2["is_household"])
+
+        # 6. Check active embeddings map carries is_household
+        sample_vec = np.random.randn(512).astype(np.float32)
+        sample_vec = sample_vec / np.linalg.norm(sample_vec)
+        add_face_sample(visitor["id"], sample_vec, "courier.jpg")
+        active = get_all_active_embeddings()
+        self.assertIn(visitor["id"], active)
+        self.assertFalse(active[visitor["id"]]["is_household"])
+
+        # 7. Check system stats breakdown
+        stats = get_system_stats()
+        self.assertGreaterEqual(stats["household_count"], 1)
+        self.assertGreaterEqual(stats["visitor_count"], 1)
 
 if __name__ == "__main__":
     unittest.main()

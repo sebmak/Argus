@@ -320,13 +320,15 @@ class FaceEngine:
 
         if highest_sim >= threshold and matched_person_id is not None:
             distance = float(np.sqrt(2.0 * max(0.0, 1.0 - highest_sim)))
+            is_hh = bool(known_persons[matched_person_id].get("is_household", True))
             return {
                 "match": True,
                 "person_id": matched_person_id,
                 "name": matched_name,
                 "similarity": round(highest_sim, 4),
                 "distance": round(distance, 4),
-                "sample_count": matched_sample_count
+                "sample_count": matched_sample_count,
+                "is_household": is_hh
             }
 
         return {
@@ -335,7 +337,8 @@ class FaceEngine:
             "name": "Unknown",
             "similarity": round(max(0.0, highest_sim), 4),
             "distance": round(float(np.sqrt(2.0 * max(0.0, 1.0 - max(0.0, highest_sim)))), 4),
-            "sample_count": matched_sample_count
+            "sample_count": matched_sample_count,
+            "is_household": False
         }
 
 # Global Singleton

@@ -389,6 +389,11 @@ export const RtspTab: React.FC = () => {
                         ? `${Math.round((status.last_detection.similarity ?? 0) * 100)}% match`
                         : 'Unknown'}
                     </span>
+                    {status.last_detection.match && (
+                      <span className={`chip ${status.last_detection.is_household !== false ? 'chip-success' : 'chip-purple'}`} style={{ fontSize: '0.65rem' }}>
+                        {status.last_detection.is_household !== false ? 'Household' : 'Visitor'}
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
                     {status.last_detection.timestamp

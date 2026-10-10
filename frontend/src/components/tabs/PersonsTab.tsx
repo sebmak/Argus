@@ -8,7 +8,9 @@ import {
   RefreshCw,
   Search,
   X,
-  Layers
+  Layers,
+  Home,
+  User
 } from 'lucide-react';
 import { apiFetch } from '../../api';
 import type { Person, FaceSample } from '../../types';
@@ -38,11 +40,13 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
   const [persons, setPersons] = useState<Person[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'household' | 'visitor'>('all');
 
   // Add Member Modal State
   const [isAddOpen, setIsAddOpen] = useState(openAddModal);
   const [addName, setAddName] = useState('');
   const [addNotes, setAddNotes] = useState('');
+  const [addIsHousehold, setAddIsHousehold] = useState(true);
   const [addImageBase64, setAddImageBase64] = useState<string | null>(null);
   const [addImagePreview, setAddImagePreview] = useState<string | null>(null);
   const [submittingAdd, setSubmittingAdd] = useState(false);
@@ -52,6 +56,7 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
   const [personSamples, setPersonSamples] = useState<FaceSample[]>([]);
   const [loadingSamples, setLoadingSamples] = useState(false);
   const [uploadingSample, setUploadingSample] = useState(false);
+  const [updatingHousehold, setUpdatingHousehold] = useState(false);
 
   // Sync external openAddModal prop
   useEffect(() => {
@@ -79,6 +84,7 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
   const handleOpenAdd = () => {
     setAddName('');
     setAddNotes('');
+    setAddIsHousehold(true);
     setAddImageBase64(null);
     setAddImagePreview(null);
     setIsAddOpen(true);
@@ -104,15 +110,16 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
   const handleCreatePerson = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addName.trim()) {
-      showToast('Please enter member name', 'error');
+      showToast('Please enter person name', 'error');
       return;
     }
 
     setSubmittingAdd(true);
     try {
-      const payload: { name: string; notes?: string; initial_image?: string } = {
+      const payload: { name: string; notes?: string; is_household: boolean; initial_image?: string } = {
         name: addName.trim(),
         notes: addNotes.trim() || undefined,
+        is_household: addIsHousehold,
         initial_image: addImageBase64 || undefined
       };
 
@@ -121,12 +128,12 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
         body: JSON.stringify(payload)
       });
 
-      showToast(`Member '${res.person.name}' registered successfully!`, 'success');
+      showToast(`Profile '${res.person.name}' (${res.person.is_household !== false ? 'Household' : 'Visitor'}) created!`, 'success');
       handleCloseAdd();
       fetchPersons();
       onRefreshStats();
     } catch (err: any) {
-      showToast(err.message || 'Failed to create member profile', 'error');
+      showToast(err.message || 'Failed to create person profile', 'error');
     } finally {
       setSubmittingAdd(false);
     }
@@ -208,10 +215,36 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
     }
   };
 
-  const filteredPersons = persons.filter(p =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (p.notes && p.notes.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const handleToggleHousehold = async (newVal: boolean) => {
+    if (!selectedPerson) return;
+    setUpdatingHousehold(true);
+    try {
+      const res = await apiFetch<{ status: string; person: Person }>(`/api/v1/persons/${selectedPerson.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_household: newVal })
+      });
+      setSelectedPerson(prev => prev ? { ...prev, is_household: res.person.is_household } : null);
+      setPersons(prev => prev.map(p => p.id === res.person.id ? { ...p, is_household: res.person.is_household } : p));
+      showToast(`Updated classification to ${newVal ? 'Household Member' : 'Visitor / Non-Household'}`, 'success');
+      onRefreshStats();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update classification', 'error');
+    } finally {
+      setUpdatingHousehold(false);
+    }
+  };
+
+  const householdCount = persons.filter(p => p.is_household !== false).length;
+  const visitorCount = persons.filter(p => p.is_household === false).length;
+
+  const filteredPersons = persons.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.notes && p.notes.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (!matchesSearch) return false;
+    if (filterType === 'household') return p.is_household !== false;
+    if (filterType === 'visitor') return p.is_household === false;
+    return true;
+  });
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -226,9 +259,9 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
             <Users size={20} />
           </div>
           <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Household Members</h2>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Registered People</h2>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Manage registered family and friends recognized by the ArcFace 512-d engine
+              Manage registered household members and visitors recognized by the ArcFace engine
             </p>
           </div>
         </div>
@@ -261,18 +294,44 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
             onClick={handleOpenAdd}
           >
             <UserPlus size={14} />
-            <span>Add Member</span>
+            <span>Add Person</span>
           </button>
         </div>
       </div>
 
-      {/* Grid of Household Members */}
+      {/* Filter Tabs */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button
+          className={`btn btn-sm ${filterType === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setFilterType('all')}
+        >
+          All ({persons.length})
+        </button>
+        <button
+          className={`btn btn-sm ${filterType === 'household' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setFilterType('household')}
+          style={filterType === 'household' ? { background: 'var(--accent-emerald)', borderColor: 'var(--accent-emerald)' } : {}}
+        >
+          <Home size={13} />
+          <span>Household ({householdCount})</span>
+        </button>
+        <button
+          className={`btn btn-sm ${filterType === 'visitor' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setFilterType('visitor')}
+          style={filterType === 'visitor' ? { background: 'var(--accent-purple)', borderColor: 'var(--accent-purple)' } : {}}
+        >
+          <User size={13} />
+          <span>Visitors / Non-Household ({visitorCount})</span>
+        </button>
+      </div>
+
+      {/* Grid of Household & Visitor Members */}
       {loading && persons.length === 0 ? (
         <div className="glass-panel" style={{ padding: '4rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
           <div className="animate-spin" style={{ display: 'inline-block', marginBottom: '1rem' }}>
             <RefreshCw size={28} />
           </div>
-          <div>Loading household profiles...</div>
+          <div>Loading profiles...</div>
         </div>
       ) : filteredPersons.length === 0 ? (
         <div className="glass-panel" style={{ padding: '4rem 2rem', textAlign: 'center' }}>
@@ -284,17 +343,17 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
             <Users size={32} />
           </div>
           <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.35rem' }}>
-            {searchQuery ? 'No members match search' : 'No household members registered'}
+            {searchQuery ? 'No persons match search' : 'No persons registered in this category'}
           </h3>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', maxWidth: '420px', margin: '0 auto 1.5rem' }}>
             {searchQuery
-              ? 'Try adjusting your search query.'
-              : 'Add members manually with photos, or ingest them automatically via the UniFi Protect webhook or Review Queue.'}
+              ? 'Try adjusting your search query or filter.'
+              : 'Add persons manually with photos, or assign them via the Review Queue.'}
           </p>
           {!searchQuery && (
             <button className="btn btn-primary" onClick={handleOpenAdd}>
               <UserPlus size={16} />
-              <span>Add First Household Member</span>
+              <span>Add New Person</span>
             </button>
           )}
         </div>
@@ -340,6 +399,26 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
                   </div>
                 )}
 
+                {/* Household vs Visitor Badge */}
+                <div style={{
+                  position: 'absolute',
+                  top: '0.75rem',
+                  left: '0.75rem',
+                  background: person.is_household !== false ? 'rgba(16, 185, 129, 0.85)' : 'rgba(168, 85, 247, 0.85)',
+                  backdropFilter: 'blur(8px)',
+                  padding: '0.2rem 0.55rem',
+                  borderRadius: '6px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}>
+                  {person.is_household !== false ? <Home size={11} /> : <User size={11} />}
+                  <span>{person.is_household !== false ? 'Household' : 'Visitor'}</span>
+                </div>
+
                 <div style={{
                   position: 'absolute',
                   top: '0.75rem',
@@ -382,7 +461,7 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
                     onClick={() => openManageModal(person)}
                   >
                     <ImageIcon size={14} />
-                    <span>Manage Samples</span>
+                    <span>Manage</span>
                   </button>
 
                   <button
@@ -404,7 +483,7 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
         <div className="modal-backdrop">
           <div className="modal-card" style={{ maxWidth: '480px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Add Household Member</h3>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Add New Person</h3>
               <button
                 className="btn btn-secondary btn-sm"
                 style={{ padding: '0.3rem', borderRadius: '50%' }}
@@ -415,6 +494,33 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
             </div>
 
             <form onSubmit={handleCreatePerson} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div>
+                <label className="form-label">Classification *</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.25rem' }}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${addIsHousehold ? 'btn-primary' : 'btn-secondary'}`}
+                    style={addIsHousehold ? { background: 'var(--accent-emerald)', borderColor: 'var(--accent-emerald)', justifyContent: 'center' } : { justifyContent: 'center' }}
+                    onClick={() => setAddIsHousehold(true)}
+                  >
+                    <Home size={14} />
+                    <span>Household Member</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${!addIsHousehold ? 'btn-primary' : 'btn-secondary'}`}
+                    style={!addIsHousehold ? { background: 'var(--accent-purple)', borderColor: 'var(--accent-purple)', justifyContent: 'center' } : { justifyContent: 'center' }}
+                    onClick={() => setAddIsHousehold(false)}
+                  >
+                    <User size={14} />
+                    <span>Visitor / Guest</span>
+                  </button>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                  {addIsHousehold ? 'Classified as family or resident member.' : 'Classified as guest, worker, or non-household contact.'}
+                </div>
+              </div>
+
               <div>
                 <label className="form-label">Full Name *</label>
                 <input
@@ -517,6 +623,33 @@ export const PersonsTab: React.FC<PersonsTabProps> = ({
                 onClick={() => setSelectedPerson(null)}
               >
                 <X size={16} />
+              </button>
+            </div>
+
+            {/* Classification Quick Switcher */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0.75rem 1rem',
+              background: 'rgba(0,0,0,0.25)',
+              borderRadius: 'var(--radius-sm)',
+              marginBottom: '1rem',
+              border: '1px solid var(--border-subtle)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Classification:</span>
+                <span className={`chip ${selectedPerson.is_household !== false ? 'chip-success' : 'chip-purple'}`} style={{ fontSize: '0.7rem' }}>
+                  {selectedPerson.is_household !== false ? 'Household Member' : 'Visitor / Non-Household'}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={updatingHousehold}
+                onClick={() => handleToggleHousehold(selectedPerson.is_household === false)}
+              >
+                {selectedPerson.is_household !== false ? 'Change to Visitor' : 'Change to Household'}
               </button>
             </div>
 

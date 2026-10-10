@@ -16,12 +16,16 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/protect", tags=["UniFi Protect Webhook"])
 
+# Rules for WebhookResponse class:
+# 1. Variables and data schema properties must be declared at the top of the class.
+# 2. Encapsulates UniFi Protect webhook ingestion confirmation telemetry including household classification.
 class WebhookResponse(BaseModel):
     status: str
     message: str
     person_id: str
     person_name: str
     total_samples: int
+    is_household: bool = True
     camera_id: str = ""
     event_id: str = ""
 

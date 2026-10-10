@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # 4. Stream frame acquisitions and inference must respect configured sampling rates and entity cooldowns.
 # 5. Filters out low-confidence faces and tiny non-face bounding boxes before inbox recording and alerts.
 # 6. Aggregates unknown face detections across a sliding timeframe window to record only the highest-confidence best shot.
+# 7. Annotates detection alerts with is_household classification for external webhook and MQTT branching.
 class RtspStreamWorker:
     thread: Optional[threading.Thread] = None
     stop_event: threading.Event = threading.Event()
@@ -340,7 +341,8 @@ class RtspStreamWorker:
                         matched_name=None,
                         similarity=match_info["similarity"],
                         status="unrecognized",
-                        confidence=det_confidence
+                        confidence=det_confidence,
+                        is_household=False
                     )
 
                     self.unknown_tracks.append({
@@ -382,6 +384,7 @@ class RtspStreamWorker:
                                     pass
                         continue
 
+                    is_hh = bool(match_info.get("is_household", True))
                     det_id = record_detection(
                         thumbnail_path=det.thumbnail_filename,
                         bbox=det.bbox,
@@ -390,7 +393,8 @@ class RtspStreamWorker:
                         matched_name=match_info["name"],
                         similarity=match_info["similarity"],
                         status="matched",
-                        confidence=det_confidence
+                        confidence=det_confidence,
+                        is_household=is_hh
                     )
                     should_notify = (match_info["similarity"] >= settings.NOTIFICATION_THRESHOLD)
 
@@ -405,10 +409,11 @@ class RtspStreamWorker:
                     "camera": self.camera_name,
                     "person_name": person_name,
                     "match": match_info["match"],
-                    "person_id": match_info["person_id"],
-                    "similarity": match_info["similarity"],
+                    "is_household": bool(match_info.get("is_household", False)),
+                    "person_id": match_info.get("person_id"),
+                    "similarity": match_info.get("similarity", 0.0),
                     "confidence": det_confidence,
-                    "distance": match_info["distance"],
+                    "distance": match_info.get("distance", 0.0),
                     "timestamp": now,
                     "detection_id": det_id,
                     "bbox": det.bbox,
@@ -417,8 +422,8 @@ class RtspStreamWorker:
                 }
 
                 self.last_detection = event_payload
-                logger.info("Real-time RTSP detection alert: '%s' (similarity: %.2f) on %s",
-                            person_name, match_info["similarity"], self.camera_name)
+                logger.info("Real-time RTSP detection alert: '%s' (is_household: %s, similarity: %.2f) on %s",
+                            person_name, event_payload["is_household"], match_info["similarity"], self.camera_name)
 
                 # Dispatch to Webhook and MQTT
                 dispatch_detection_event(event_payload)

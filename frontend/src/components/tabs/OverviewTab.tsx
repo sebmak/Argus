@@ -38,10 +38,17 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           }}>
             <Users size={24} />
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>Household Members</div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#fff', lineHeight: 1.1 }}>
-              {stats ? stats.total_persons : '...'}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#fff', lineHeight: 1.1 }}>
+                {stats ? (stats.household_count ?? stats.total_persons) : '...'}
+              </div>
+              {stats && (stats.visitor_count ?? 0) > 0 && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--accent-purple)' }}>
+                  +{stats.visitor_count} visitor{stats.visitor_count === 1 ? '' : 's'}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -164,6 +171,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                       <span className={`chip ${act.status === 'matched' ? 'chip-success' : 'chip-warning'}`} style={{ fontSize: '0.65rem' }}>
                         {act.status === 'matched' ? `${Math.round((act.similarity || 0) * 100)}% match` : 'Unknown'}
                       </span>
+                      {act.status === 'matched' && (
+                        <span className={`chip ${act.is_household !== false ? 'chip-success' : 'chip-purple'}`} style={{ fontSize: '0.65rem' }}>
+                          {act.is_household !== false ? 'Household' : 'Visitor'}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                       {act.camera_id || 'Front Door'} • {new Date(act.timestamp).toLocaleTimeString()}
