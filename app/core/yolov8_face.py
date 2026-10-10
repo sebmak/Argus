@@ -81,6 +81,7 @@ def ensure_yolo_face_model(destination_path: Path) -> bool:
 # 2. Member variables and session handles must be declared at the top of the class.
 # 3. Uses pure OpenCV DNN NMS and NumPy post-processing without PyTorch dependency.
 # 4. Supports dynamic image resolutions via letterbox preprocessing and coordinate un-scaling.
+# 5. Supports both multi-head unconcatenated DFL outputs (3 feature maps) and single concatenated detection tensors.
 # ==============================================================================
 class YOLOv8FaceDetector:
     model_path: Optional[str] = None
@@ -189,9 +190,15 @@ class YOLOv8FaceDetector:
         else:
             return np.zeros((1, 3, target_h, target_w), dtype=np.float32), 1.0, (0.0, 0.0)
 
-    def postprocess(
+    @staticmethod
+    def softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
+        """Compute softmax values for array x along axis."""
+        exp_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
+        return exp_x / np.sum(exp_x, axis=axis, keepdims=True)
+
+    def _decode_dfl_feature_maps(
         self,
-        raw_preds: np.ndarray,
+        feature_maps: List[np.ndarray],
         orig_shape: Tuple[int, int],
         scale: float,
         pad: Tuple[float, float],
@@ -199,22 +206,192 @@ class YOLOv8FaceDetector:
         iou_threshold: Optional[float] = None
     ) -> List[Dict[str, Any]]:
         """
-        Parses raw model outputs, runs OpenCV NMS, and un-scales coordinates back to original image.
+        Decodes multi-scale YOLOv8-Face Pose/DFL feature maps (e.g. from yakhyo/yolov8-face-onnx-inference).
+        Outputs have shape (1, 80, H, W) across strides [8, 16, 32] where 80 = 64 (bbox DFL) + 1 (conf) + 15 (keypoints).
+        """
+        conf_th = conf_threshold if conf_threshold is not None else self.conf_threshold
+        iou_th = iou_threshold if iou_threshold is not None else self.iou_threshold
+
+        boxes_list = []
+        scores_list = []
+        landmarks_list = []
+        strides = [8, 16, 32]
+
+        for pred, stride in zip(feature_maps, strides):
+            if not hasattr(pred, "shape") or len(pred.shape) != 4:
+                continue
+            batch_size, channels, height, width = pred.shape
+            if channels < 80:
+                continue
+
+            # Reshape: (1, 80, H, W) -> (H*W, 80)
+            p = pred.reshape(batch_size, channels, -1).transpose(0, 2, 1)[0]
+
+            # Grid generation with 0.5 center offset matching PyTorch's make_anchors
+            grid_y, grid_x = np.meshgrid(np.arange(height) + 0.5, np.arange(width) + 0.5, indexing="ij")
+            grid_x = grid_x.flatten()
+            grid_y = grid_y.flatten()
+
+            bbox_pred = p[:, :64]
+            cls_conf = p[:, 64]
+            kpt_pred = p[:, 65:]
+
+            # Softmax across DFL 16 bins and project to distance
+            bbox_pred = bbox_pred.reshape(-1, 4, 16)
+            dfl_weights = np.arange(16, dtype=np.float32)
+            bbox_dist = self.softmax(bbox_pred, axis=-1) @ dfl_weights
+
+            x1 = (grid_x - bbox_dist[:, 0]) * stride
+            y1 = (grid_y - bbox_dist[:, 1]) * stride
+            x2 = (grid_x + bbox_dist[:, 2]) * stride
+            y2 = (grid_y + bbox_dist[:, 3]) * stride
+            boxes = np.stack([x1, y1, x2, y2], axis=-1)
+
+            # Keypoints decoding: kpt = (kpt * 2.0 + grid) * stride
+            kpt_grid_y, kpt_grid_x = np.meshgrid(np.arange(height), np.arange(width), indexing="ij")
+            kpt_grid_x = kpt_grid_x.flatten()
+            kpt_grid_y = kpt_grid_y.flatten()
+
+            kpt_pred = kpt_pred.reshape(-1, 5, 3)
+            kpt_x = (kpt_pred[:, :, 0] * 2.0 + kpt_grid_x[:, None]) * stride
+            kpt_y = (kpt_pred[:, :, 1] * 2.0 + kpt_grid_y[:, None]) * stride
+            landmarks = np.stack([kpt_x, kpt_y], axis=-1).reshape(-1, 10)
+
+            # Sigmoid for class confidence
+            scores = 1.0 / (1.0 + np.exp(-np.clip(cls_conf, -50.0, 50.0)))
+
+            boxes_list.append(boxes)
+            scores_list.append(scores)
+            landmarks_list.append(landmarks)
+
+        if not boxes_list:
+            return []
+
+        all_boxes = np.concatenate(boxes_list, axis=0)
+        all_scores = np.concatenate(scores_list, axis=0)
+        all_landmarks = np.concatenate(landmarks_list, axis=0)
+
+        mask = all_scores >= conf_th
+        if not np.any(mask):
+            return []
+
+        kept_boxes = all_boxes[mask]
+        kept_scores = all_scores[mask]
+        kept_landmarks = all_landmarks[mask]
+
+        # Convert xyxy to xywh for OpenCV NMS
+        w = np.maximum(0.0, kept_boxes[:, 2] - kept_boxes[:, 0])
+        h = np.maximum(0.0, kept_boxes[:, 3] - kept_boxes[:, 1])
+        boxes_for_nms = []
+        for i in range(len(kept_boxes)):
+            boxes_for_nms.append([float(kept_boxes[i, 0]), float(kept_boxes[i, 1]), float(w[i]), float(h[i])])
+
+        scores_list_nms = [float(s) for s in kept_scores]
+
+        indices = []
+        if cv2 is not None:
+            indices = cv2.dnn.NMSBoxes(
+                bboxes=boxes_for_nms,
+                scores=scores_list_nms,
+                score_threshold=float(conf_th),
+                nms_threshold=float(iou_th)
+            )
+
+        if len(indices) == 0:
+            return []
+
+        if hasattr(indices, "flatten"):
+            indices = indices.flatten()
+        elif isinstance(indices, list):
+            indices = [idx[0] if isinstance(idx, (list, tuple, np.ndarray)) else idx for idx in indices]
+
+        orig_h, orig_w = orig_shape
+        dw, dh = pad
+        results: List[Dict[str, Any]] = []
+
+        for idx in indices:
+            idx = int(idx)
+            bx1, by1, bx2, by2 = kept_boxes[idx]
+
+            # Un-pad and un-scale
+            ubx1 = (bx1 - dw) / scale
+            uby1 = (by1 - dh) / scale
+            ubx2 = (bx2 - dw) / scale
+            uby2 = (by2 - dh) / scale
+
+            clip_x1 = max(0, min(orig_w - 1, int(round(ubx1))))
+            clip_y1 = max(0, min(orig_h - 1, int(round(uby1))))
+            clip_x2 = max(0, min(orig_w, int(round(ubx2))))
+            clip_y2 = max(0, min(orig_h, int(round(uby2))))
+
+            raw_kps = kept_landmarks[idx].reshape(5, 2)
+            kps: List[List[float]] = []
+            for kx, ky in raw_kps:
+                ukx = (kx - dw) / scale
+                uky = (ky - dh) / scale
+                kps.append([round(float(ukx), 2), round(float(uky), 2)])
+
+            results.append({
+                "bbox": [clip_x1, clip_y1, clip_x2, clip_y2],
+                "score": round(float(kept_scores[idx]), 3),
+                "kps": kps
+            })
+
+        return results
+
+    def postprocess(
+        self,
+        raw_preds: Any,
+        orig_shape: Tuple[int, int],
+        scale: float,
+        pad: Tuple[float, float],
+        conf_threshold: Optional[float] = None,
+        iou_threshold: Optional[float] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Parses raw model outputs (both DFL multi-head and concatenated single-tensor),
+        runs OpenCV NMS, and un-scales coordinates back to original image.
         Returns list of detections with 'bbox', 'score', and 'kps'.
         """
         if raw_preds is None or len(raw_preds) == 0:
             return []
 
-        # Handle batch dimension and transposition
-        preds = raw_preds
-        if len(preds.shape) == 3:
-            # If shape is (1, C, Anchors) e.g. (1, 15, 8400) or (1, 20, 8400), transpose to (Anchors, C)
-            if preds.shape[1] < preds.shape[2]:
-                preds = np.transpose(preds[0], (1, 0))
+        # Case 1: Multiple feature map outputs (e.g. YOLOv8 Pose DFL 3 strides)
+        if isinstance(raw_preds, (list, tuple)):
+            if len(raw_preds) >= 3 and any(len(getattr(p, "shape", ())) == 4 and p.shape[1] >= 80 for p in raw_preds):
+                return self._decode_dfl_feature_maps(
+                    raw_preds, orig_shape, scale, pad, conf_threshold, iou_threshold
+                )
+            elif len(raw_preds) == 1:
+                preds = raw_preds[0]
             else:
-                preds = preds[0]
-        elif len(preds.shape) == 2 and preds.shape[0] < preds.shape[1]:
-            preds = np.transpose(preds, (1, 0))
+                preds = raw_preds[0]
+        else:
+            preds = raw_preds
+
+        # Check if single 4D tensor with >= 80 channels was passed
+        if hasattr(preds, "shape") and len(preds.shape) == 4 and preds.shape[1] >= 80:
+            return self._decode_dfl_feature_maps(
+                [preds], orig_shape, scale, pad, conf_threshold, iou_threshold
+            )
+
+        # Case 2: Concatenated single tensor output
+        if hasattr(preds, "shape"):
+            if len(preds.shape) == 3:
+                # If shape is (1, C, Anchors) e.g. (1, 15, 8400), transpose to (Anchors, C)
+                if preds.shape[1] < preds.shape[2]:
+                    preds = np.transpose(preds[0], (1, 0))
+                else:
+                    preds = preds[0]
+            elif len(preds.shape) == 2 and preds.shape[0] < preds.shape[1]:
+                preds = np.transpose(preds, (1, 0))
+            elif len(preds.shape) > 2:
+                preds = np.squeeze(preds)
+                if len(preds.shape) == 2 and preds.shape[0] < preds.shape[1]:
+                    preds = np.transpose(preds, (1, 0))
+
+        if not hasattr(preds, "shape") or len(preds.shape) != 2:
+            return []
 
         conf_th = conf_threshold if conf_threshold is not None else self.conf_threshold
         iou_th = iou_threshold if iou_threshold is not None else self.iou_threshold
@@ -323,9 +500,8 @@ class YOLOv8FaceDetector:
 
         try:
             outputs = self.session.run(self.output_names, {self.input_name: blob})
-            raw_preds = outputs[0]
             return self.postprocess(
-                raw_preds,
+                outputs,
                 orig_shape=orig_shape,
                 scale=scale,
                 pad=(dw, dh),

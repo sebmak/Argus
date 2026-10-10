@@ -163,6 +163,38 @@ class TestYOLOv8FacePostprocessing(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertAlmostEqual(results[0]["score"], 0.90, places=2)
 
+    def test_postprocess_dfl_multihead_feature_maps(self):
+        # 3 feature maps representing strides [8, 16, 32] on a 640x480 frame:
+        # Stride 8: (1, 80, 80, 60)
+        # Stride 16: (1, 80, 40, 30)
+        # Stride 32: (1, 80, 20, 15)
+        feat8 = np.zeros((1, 80, 80, 60), dtype=np.float32)
+        feat16 = np.zeros((1, 80, 40, 30), dtype=np.float32)
+        feat32 = np.zeros((1, 80, 20, 15), dtype=np.float32)
+
+        # In stride 8, set a high-confidence face detection at grid (y=40, x=30)
+        feat8[0, 64, 40, 30] = 5.0  # sigmoid(5.0) ~ 0.993
+        # DFL distribution channels: 4 borders * 16 bins
+        feat8[0, 2, 40, 30] = 10.0   # border 0
+        feat8[0, 18, 40, 30] = 10.0  # border 1
+        feat8[0, 34, 40, 30] = 10.0  # border 2
+        feat8[0, 50, 40, 30] = 10.0  # border 3
+
+        # Postprocess the list of 3 feature maps
+        results = self.detector.postprocess(
+            [feat8, feat16, feat32],
+            orig_shape=(640, 480),
+            scale=1.0,
+            pad=(0.0, 0.0),
+            conf_threshold=0.50
+        )
+
+        self.assertGreaterEqual(len(results), 1)
+        det = results[0]
+        self.assertGreater(det["score"], 0.90)
+        self.assertEqual(len(det["bbox"]), 4)
+        self.assertEqual(len(det["kps"]), 5)
+
 # ==============================================================================
 # Rules for TestFaceEngineDetectorSwitching:
 # 1. Tests runtime toggling of detector engine between 'yolov8_face' and 'scrfd'.
