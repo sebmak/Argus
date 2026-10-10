@@ -36,6 +36,7 @@ ${BOLD}Options:${RESET}
   --minor             Increment minor version (e.g. 0.0.4 -> 0.1.0)
   --major             Increment major version (e.g. 0.0.4 -> 1.0.0)
   --skip-frontend     Skip compiling frontend React assets with npm run build
+  --skip-git          Skip committing version bump, git tagging, and pushing to GitHub
   --dry-run           Display commands and versions without executing docker
   -h, --help          Show this help message
 
@@ -51,6 +52,7 @@ EOF
 BUMP_TYPE="patch"
 EXPLICIT_VERSION=""
 SKIP_FRONTEND=false
+SKIP_GIT=false
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
@@ -69,6 +71,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-frontend)
       SKIP_FRONTEND=true
+      shift
+      ;;
+    --skip-git)
+      SKIP_GIT=true
       shift
       ;;
     --dry-run)
@@ -139,7 +145,7 @@ echo -e "${BOLD}${SKY}======================================================${RE
 # 3. Compile React Frontend Assets
 if [ "$SKIP_FRONTEND" = false ]; then
   if [ -d "$SCRIPT_DIR/frontend" ]; then
-    echo -e "${BOLD}[1/4] Building React frontend assets...${RESET}"
+    echo -e "${BOLD}[1/5] Building React frontend assets...${RESET}"
     if [ "$DRY_RUN" = true ]; then
       echo "  [dry-run] (cd frontend && npm run build)"
     else
@@ -148,11 +154,11 @@ if [ "$SKIP_FRONTEND" = false ]; then
     fi
   fi
 else
-  echo -e "${AMBER}[1/4] Skipping frontend compilation (--skip-frontend)${RESET}\n"
+  echo -e "${AMBER}[1/5] Skipping frontend compilation (--skip-frontend)${RESET}\n"
 fi
 
 # 4. Synchronize Version in app/config.py and .version
-echo -e "${BOLD}[2/4] Synchronizing version to ${NEW_VERSION}...${RESET}"
+echo -e "${BOLD}[2/5] Synchronizing version to ${NEW_VERSION}...${RESET}"
 if [ "$DRY_RUN" = false ]; then
   echo "$NEW_VERSION" > "$VERSION_FILE"
   # Update APP_VERSION in app/config.py
@@ -165,7 +171,7 @@ else
 fi
 
 # 5. Build Docker Image
-echo -e "${BOLD}[3/4] Building Docker container (${PLATFORM})...${RESET}"
+echo -e "${BOLD}[3/5] Building Docker container (${PLATFORM})...${RESET}"
 CMD_BUILD="docker build --platform ${PLATFORM} -t ${IMAGE_NAME}:latest -t ${IMAGE_NAME}:${NEW_VERSION} \"${SCRIPT_DIR}\""
 
 if [ "$DRY_RUN" = true ]; then
@@ -179,7 +185,7 @@ fi
 REMOTE_VERSIONED="${REGISTRY}/${IMAGE_NAME}:${NEW_VERSION}"
 REMOTE_LATEST="${REGISTRY}/${IMAGE_NAME}:latest"
 
-echo -e "${BOLD}[4/4] Tagging and pushing to local registry...${RESET}"
+echo -e "${BOLD}[4/5] Tagging and pushing to local registry...${RESET}"
 CMD_TAG_VERSION="docker image tag ${IMAGE_NAME}:latest ${REMOTE_VERSIONED}"
 CMD_TAG_LATEST="docker image tag ${IMAGE_NAME}:latest ${REMOTE_LATEST}"
 CMD_PUSH_VERSION="docker image push ${REMOTE_VERSIONED}"
@@ -204,12 +210,56 @@ else
   echo -e "${GREEN}✓ Pushed to registry successfully${RESET}\n"
 fi
 
+# 7. Git Tag and GitHub Release
+if [ "$SKIP_GIT" = false ]; then
+  echo -e "${BOLD}[5/5] Creating Git release and pushing to GitHub...${RESET}"
+  TAG_NAME="v${NEW_VERSION}"
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [dry-run] git add $VERSION_FILE $SCRIPT_DIR/app/config.py"
+    echo "  [dry-run] git commit -m \"chore: release ${TAG_NAME}\""
+    echo "  [dry-run] git tag -a \"${TAG_NAME}\" -m \"Release ${TAG_NAME}\""
+    echo "  [dry-run] git push origin main"
+    echo "  [dry-run] git push origin \"${TAG_NAME}\""
+    echo -e "${GREEN}✓ [dry-run] Release tag ${TAG_NAME} prepared${RESET}\n"
+  else
+    # Stage version changes if any
+    git add "$VERSION_FILE" "$SCRIPT_DIR/app/config.py" 2>/dev/null || true
+    if ! git diff --cached --quiet; then
+      git commit -m "chore: release ${TAG_NAME}"
+      echo -e "  ${GREEN}✓ Committed release files${RESET}"
+    fi
+
+    # Create annotated tag if it does not already exist
+    if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+      echo -e "  ${AMBER}Tag ${TAG_NAME} already exists locally.${RESET}"
+    else
+      git tag -a "$TAG_NAME" -m "Release ${TAG_NAME}"
+      echo -e "  ${GREEN}✓ Created tag ${TAG_NAME}${RESET}"
+    fi
+
+    # Push commits to origin main
+    echo -e "  Pushing commits to GitHub (origin main)..."
+    git push origin main
+
+    # Push tag to origin
+    echo -e "  Pushing tag to GitHub (origin ${TAG_NAME})..."
+    git push origin "$TAG_NAME"
+    echo -e "${GREEN}✓ Pushed tag ${TAG_NAME} to GitHub. Release workflow triggered!${RESET}\n"
+  fi
+else
+  echo -e "${AMBER}[5/5] Skipping Git release tag & push (--skip-git)${RESET}\n"
+fi
+
 echo -e "${BOLD}${GREEN}======================================================${RESET}"
-echo -e "${BOLD}${GREEN}  Deployment Complete!${RESET}"
+echo -e "${BOLD}${GREEN}  Deployment & Release Complete!${RESET}"
 echo -e "${BOLD}${GREEN}======================================================${RESET}"
 echo -e "  Version: ${BOLD}${NEW_VERSION}${RESET}"
 echo -e "  Pull command:"
 echo -e "    ${SKY}docker pull ${REMOTE_VERSIONED}${RESET}"
 echo -e "  Or latest:"
 echo -e "    ${SKY}docker pull ${REMOTE_LATEST}${RESET}"
+if [ "$SKIP_GIT" = false ]; then
+echo -e "  GitHub Release:"
+echo -e "    ${SKY}https://github.com/sebmak/FaceDetection/releases/tag/v${NEW_VERSION}${RESET}"
+fi
 echo -e "${BOLD}${GREEN}======================================================${RESET}"
