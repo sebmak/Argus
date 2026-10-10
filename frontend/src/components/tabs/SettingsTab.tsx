@@ -13,12 +13,17 @@ import { apiFetch } from '../../api';
 import type { SystemSettings, MigrationStatus } from '../../types';
 import { useToast } from '../Toast';
 
-export const SettingsTab: React.FC = () => {
+interface SettingsTabProps {
+  onSettingsSaved?: () => void;
+}
+
+export const SettingsTab: React.FC<SettingsTabProps> = ({ onSettingsSaved }) => {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Recognition Settings State
+  const [faceDetectorType, setFaceDetectorType] = useState('yolov8_face');
   const [detectionConfidence, setDetectionConfidence] = useState(0.6);
   const [similarityThreshold, setSimilarityThreshold] = useState(0.45);
   const [detSize, setDetSize] = useState(320);
@@ -46,6 +51,7 @@ export const SettingsTab: React.FC = () => {
         apiFetch<MigrationStatus>('/api/v1/settings/migrations')
       ]);
 
+      if (settingsRes.face_detector_type) setFaceDetectorType(settingsRes.face_detector_type);
       if (settingsRes.detection_confidence !== undefined) setDetectionConfidence(settingsRes.detection_confidence);
       if (settingsRes.similarity_threshold !== undefined) setSimilarityThreshold(settingsRes.similarity_threshold);
       if (settingsRes.det_size !== undefined) setDetSize(settingsRes.det_size);
@@ -76,6 +82,7 @@ export const SettingsTab: React.FC = () => {
     setSaving(true);
     try {
       const payload: Partial<SystemSettings> = {
+        face_detector_type: faceDetectorType,
         detection_confidence: detectionConfidence,
         similarity_threshold: similarityThreshold,
         det_size: detSize,
@@ -95,6 +102,7 @@ export const SettingsTab: React.FC = () => {
       });
 
       showToast('Settings saved to database and applied to live runtime!', 'success');
+      onSettingsSaved?.();
     } catch (err: any) {
       showToast(err.message || 'Failed to save settings', 'error');
     } finally {
@@ -177,6 +185,22 @@ export const SettingsTab: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem' }}>
               <Sliders size={18} color="var(--accent-primary)" />
               <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Inference &amp; Recognition Tuning</h3>
+            </div>
+
+            {/* Face Detection Engine Selection */}
+            <div>
+              <label className="form-label">Face Detector Engine</label>
+              <select
+                className="form-input"
+                value={faceDetectorType}
+                onChange={e => setFaceDetectorType(e.target.value)}
+              >
+                <option value="yolov8_face">YOLOv8-Face (Dual-Stage, Best False-Positive Filter)</option>
+                <option value="scrfd">SCRFD (InsightFace Default RetinaFace)</option>
+              </select>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                YOLOv8-Face specializes in eliminating false detections (foliage, hubcaps, headlights) on outdoor cameras while passing landmarks to ArcFace.
+              </span>
             </div>
 
             {/* Detection Confidence */}

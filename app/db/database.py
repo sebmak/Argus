@@ -85,6 +85,9 @@ except ImportError:
         def sqrt(x):
             return math.sqrt(max(0.0, float(x)))
 
+        # Rules for random class:
+        # 1. Variables and pseudo-random generators must be defined at the top of the class.
+        # 2. Generates Gaussian normal distribution vectors as numpy fallback.
         class random:
             @staticmethod
             def randn(n):
@@ -650,7 +653,11 @@ def get_system_stats() -> Dict[str, Any]:
             "detections_today": detections_today,
             "recognized_today": recognized_today,
             "accuracy_rate": accuracy_rate,
-            "recent_activity": recent_activity
+            "recent_activity": recent_activity,
+            "det_size": settings.DET_SIZE,
+            "ort_num_threads": settings.ORT_NUM_THREADS,
+            "face_detector_type": settings.FACE_DETECTOR_TYPE,
+            "face_model_name": settings.FACE_MODEL_NAME
         }
 
 def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
@@ -684,6 +691,7 @@ def verify_user_credentials(username: str, password_plain: str) -> Optional[Dict
 
 DEFAULT_SETTINGS_MAP = {
     "detection_confidence": lambda: str(settings.DETECTION_CONFIDENCE),
+    "face_detector_type": lambda: settings.FACE_DETECTOR_TYPE,
     "similarity_threshold": lambda: str(settings.SIMILARITY_THRESHOLD),
     "notification_threshold": lambda: str(settings.NOTIFICATION_THRESHOLD),
     "notify_on_unknown": lambda: "true" if settings.NOTIFY_ON_UNKNOWN else "false",
@@ -736,16 +744,40 @@ def seed_default_settings():
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(val_fn())))
 
         # Synchronize container environment variables if explicitly defined in runtime environment
-        env_explicit_sync = {
+        env_explicit_sync_bool = {
             "notify_on_unknown": "NOTIFY_ON_UNKNOWN",
             "webhook_only_known_faces": "WEBHOOK_ONLY_KNOWN_FACES",
-            "mqtt_only_known_faces": "MQTT_ONLY_KNOWN_FACES"
+            "mqtt_only_known_faces": "MQTT_ONLY_KNOWN_FACES",
+            "mqtt_enabled": "MQTT_ENABLED",
+            "rtsp_enabled": "RTSP_ENABLED"
         }
-        for s_key, env_name in env_explicit_sync.items():
-            if env_name in os.environ:
+        for s_key, env_name in env_explicit_sync_bool.items():
+            if env_name in os.environ and os.environ[env_name].strip() != "":
                 env_val = os.environ[env_name].strip().lower()
                 bool_str = "true" if env_val in ("true", "1", "yes") else "false"
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (s_key, bool_str))
+
+        env_explicit_sync_str = {
+            "face_detector_type": "FACE_DETECTOR_TYPE",
+            "det_size": "DET_SIZE",
+            "ort_num_threads": "ORT_NUM_THREADS",
+            "detection_confidence": "DETECTION_CONFIDENCE",
+            "similarity_threshold": "SIMILARITY_THRESHOLD",
+            "notification_threshold": "NOTIFICATION_THRESHOLD",
+            "unknown_min_confidence": "UNKNOWN_MIN_CONFIDENCE",
+            "max_samples_per_person": "MAX_SAMPLES_PER_PERSON",
+            "rtsp_url": "RTSP_URL",
+            "rtsp_camera_name": "RTSP_CAMERA_NAME",
+            "rtsp_fps": "RTSP_FPS",
+            "rtsp_cooldown_seconds": "RTSP_COOLDOWN_SECONDS",
+            "rtsp_webhook_url": "RTSP_WEBHOOK_URL",
+            "mqtt_host": "MQTT_HOST",
+            "mqtt_port": "MQTT_PORT",
+            "mqtt_topic": "MQTT_TOPIC"
+        }
+        for s_key, env_name in env_explicit_sync_str.items():
+            if env_name in os.environ and os.environ[env_name].strip() != "":
+                cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (s_key, os.environ[env_name].strip()))
         conn.commit()
     sync_settings_to_runtime()
 
@@ -768,6 +800,7 @@ def get_all_settings() -> Dict[str, Any]:
         raw = {row["key"]: row["value"] for row in rows}
 
     return {
+        "face_detector_type": raw.get("face_detector_type", settings.FACE_DETECTOR_TYPE),
         "detection_confidence": float(raw.get("detection_confidence", settings.DETECTION_CONFIDENCE)),
         "similarity_threshold": float(raw.get("similarity_threshold", settings.SIMILARITY_THRESHOLD)),
         "notification_threshold": float(raw.get("notification_threshold", settings.NOTIFICATION_THRESHOLD)),
@@ -818,6 +851,13 @@ def sync_settings_to_runtime():
         raw = {row["key"]: row["value"] for row in cursor.fetchall()}
 
     try:
+        if "face_detector_type" in raw:
+            settings.FACE_DETECTOR_TYPE = raw["face_detector_type"]
+            try:
+                from ..core.face_engine import face_engine
+                face_engine.set_detector_type(settings.FACE_DETECTOR_TYPE)
+            except Exception:
+                pass
         if "detection_confidence" in raw:
             settings.DETECTION_CONFIDENCE = float(raw["detection_confidence"])
         if "similarity_threshold" in raw:
@@ -830,6 +870,18 @@ def sync_settings_to_runtime():
             settings.UNKNOWN_MIN_CONFIDENCE = float(raw["unknown_min_confidence"])
         if "det_size" in raw:
             settings.DET_SIZE = int(raw["det_size"])
+            try:
+                from ..core.face_engine import face_engine
+                face_engine.update_det_size(settings.DET_SIZE)
+            except Exception:
+                pass
+        if "ort_num_threads" in raw:
+            settings.ORT_NUM_THREADS = int(raw["ort_num_threads"])
+            os.environ["OMP_NUM_THREADS"] = str(settings.ORT_NUM_THREADS)
+            os.environ["OPENBLAS_NUM_THREADS"] = str(settings.ORT_NUM_THREADS)
+            os.environ["MKL_NUM_THREADS"] = str(settings.ORT_NUM_THREADS)
+            os.environ["VECLIB_MAXIMUM_THREADS"] = str(settings.ORT_NUM_THREADS)
+            os.environ["NUMEXPR_NUM_THREADS"] = str(settings.ORT_NUM_THREADS)
         if "max_samples_per_person" in raw:
             settings.MAX_SAMPLES_PER_PERSON = int(raw["max_samples_per_person"])
         if "rtsp_enabled" in raw:

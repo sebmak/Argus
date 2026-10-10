@@ -15,6 +15,7 @@ except ImportError:
     from ..db.database import np
 
 from ..config import settings
+from .yolov8_face import YOLOv8FaceDetector, ensure_yolo_face_model
 
 logger = logging.getLogger(__name__)
 
@@ -49,22 +50,74 @@ class FaceDetectionResult:
 
 # ==============================================================================
 # Rules for FaceEngine:
-# 1. Encapsulates InsightFace face detection, ArcFace embedding, and cosine matching.
+# 1. Encapsulates dual-stage face detection (YOLOv8-Face or SCRFD), ArcFace embedding, and cosine matching.
 # 2. Class and instance variables must be placed at the top of the class.
 # 3. Supports mock_mode for headless test environments without host ONNX runtimes.
+# 4. Supports dynamic switching between YOLOv8-Face and SCRFD with seamless ArcFace embedding extraction.
 # ==============================================================================
 class FaceEngine:
     app: Any = None
+    yolo_detector: Optional[YOLOv8FaceDetector] = None
+    detector_type: str = "yolov8_face"
     initialized: bool = False
     mock_mode: bool = False
 
     def __init__(self):
         self.app = None
+        self.yolo_detector = None
+        self.detector_type = settings.FACE_DETECTOR_TYPE
         self.initialized = False
         self.mock_mode = os.getenv("FACE_ENGINE_MOCK", "false").lower() in ("true", "1", "yes")
 
+    def _init_yolo_detector(self):
+        """Initializes YOLOv8-Face detector if enabled and model file is available."""
+        if self.mock_mode:
+            return
+
+        try:
+            model_file = settings.models_path / settings.YOLO_FACE_MODEL_NAME
+            if not model_file.exists():
+                ensure_yolo_face_model(model_file)
+
+            if model_file.exists():
+                detector = YOLOv8FaceDetector(
+                    conf_threshold=settings.DETECTION_CONFIDENCE,
+                    iou_threshold=0.45
+                )
+                detector.input_height = settings.DET_SIZE if settings.DET_SIZE >= 320 else 640
+                detector.input_width = settings.DET_SIZE if settings.DET_SIZE >= 320 else 640
+                if detector.load_model(str(model_file)):
+                    self.yolo_detector = detector
+                    logger.info("YOLOv8-Face detector successfully loaded and active!")
+                else:
+                    logger.warning("Could not load YOLOv8-Face session; will use SCRFD fallback.")
+            else:
+                logger.info(
+                    "YOLOv8-Face model '%s' not found. System will use SCRFD until model is placed in %s.",
+                    settings.YOLO_FACE_MODEL_NAME, settings.models_path
+                )
+        except Exception as e:
+            logger.warning("Failed to initialize YOLOv8-Face detector (%s); will use SCRFD.", e)
+
+    def set_detector_type(self, detector_type: str):
+        """Switches between 'yolov8_face' and 'scrfd' at runtime."""
+        self.detector_type = detector_type
+        if detector_type == "yolov8_face" and (self.yolo_detector is None or not self.yolo_detector.initialized):
+            self._init_yolo_detector()
+
+    def update_det_size(self, new_size: int):
+        """Updates runtime detector resolution for both InsightFace and YOLOv8-Face."""
+        if self.app is not None and hasattr(self.app, "prepare"):
+            try:
+                self.app.prepare(ctx_id=-1, det_size=(new_size, new_size))
+            except Exception as e:
+                logger.warning("Could not re-prepare InsightFace det_size: %s", e)
+        if self.yolo_detector is not None:
+            self.yolo_detector.input_height = new_size
+            self.yolo_detector.input_width = new_size
+
     def initialize(self):
-        """Lazy initialization of InsightFace model with CPU execution provider."""
+        """Lazy initialization of InsightFace and YOLOv8-Face models with CPU execution provider."""
         if self.initialized:
             return
 
@@ -101,8 +154,13 @@ class FaceEngine:
             )
             # Use optimized detection resolution (e.g. 320x320 or 480x480 instead of heavy 640x640)
             self.app.prepare(ctx_id=-1, det_size=(settings.DET_SIZE, settings.DET_SIZE))
+            
+            # If YOLOv8-Face detector is configured, initialize it
+            if self.detector_type == "yolov8_face":
+                self._init_yolo_detector()
+
             self.initialized = True
-            logger.info("InsightFace successfully initialized with optimized inference pipeline!")
+            logger.info("Face engine successfully initialized with active detector: %s", self.detector_type)
         except Exception as e:
             logger.warning("Failed to initialize InsightFace (%s). Falling back to OpenCV / Mock engine.", e)
             self.mock_mode = True
@@ -195,30 +253,129 @@ class FaceEngine:
 
         if self.mock_mode or self.app is None:
             # Fallback simulated detection: center crop or Haar Cascade if available
-            h, w = img_bgr.shape[:2]
+            shape = getattr(img_bgr, "shape", None)
+            if shape and len(shape) >= 2:
+                try:
+                    h, w = int(shape[0]), int(shape[1])
+                except (ValueError, TypeError):
+                    h, w = 480, 640
+            else:
+                h, w = 480, 640
+
             # Center face approximation for headless testing
             box = [int(w * 0.2), int(h * 0.2), int(w * 0.8), int(h * 0.8)]
-            cropped = self.crop_face(img_bgr, box)
-            thumb_b64 = self.encode_image_base64(cropped)
-            
-            # Deterministic synthetic 512-d embedding based on image histogram for testing
-            hist = cv2.calcHist([img_bgr], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256]).flatten()
-            norm = np.linalg.norm(hist)
-            emb = hist / (norm + 1e-10)
-            
+            cropped = None
+            thumb_b64 = "data:image/jpeg;base64,mockthumb"
             thumb_name = f"crop_{uuid.uuid4().hex[:12]}.jpg"
-            thumb_file = settings.thumbnails_path / thumb_name
-            cv2.imwrite(str(thumb_file), cropped)
+
+            if cv2 is not None and hasattr(cv2, "imencode") and shape and len(shape) >= 2:
+                try:
+                    cropped = self.crop_face(img_bgr, box)
+                    thumb_b64 = self.encode_image_base64(cropped)
+                    thumb_file = settings.thumbnails_path / thumb_name
+                    cv2.imwrite(str(thumb_file), cropped)
+                except Exception:
+                    pass
+
+            # Deterministic synthetic 512-d embedding
+            emb = None
+            if cv2 is not None and hasattr(cv2, "calcHist") and cropped is not None:
+                try:
+                    hist = cv2.calcHist([img_bgr], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256]).flatten()
+                    norm = np.linalg.norm(hist)
+                    emb = hist / (norm + 1e-10)
+                except Exception:
+                    pass
+
+            if emb is None:
+                emb = np.zeros(512, dtype=np.float32)
+                if hasattr(emb, "__setitem__"):
+                    emb[0] = 1.0
 
             return [FaceDetectionResult(
                 bbox=box,
                 confidence=0.95,
-                embedding=emb.astype(np.float32),
+                embedding=emb if hasattr(emb, "astype") else np.zeros(512, dtype=np.float32),
                 thumbnail_base64=thumb_b64,
                 thumbnail_filename=thumb_name
             )]
 
-        # InsightFace detection
+        # Check if YOLOv8-Face detector is active and ready
+        use_yolo = (
+            self.detector_type == "yolov8_face"
+            and self.yolo_detector is not None
+            and self.yolo_detector.initialized
+        )
+
+        if use_yolo:
+            yolo_faces = self.yolo_detector.detect(img_bgr, conf_threshold=threshold)
+            rec_model = self.app.models.get("recognition") if (hasattr(self.app, "models") and self.app.models) else None
+
+            for face_det in yolo_faces:
+                conf = float(face_det["score"])
+                if conf < threshold:
+                    continue
+
+                bbox = [int(b) for b in face_det["bbox"]]
+                box_w = abs(bbox[2] - bbox[0])
+                box_h = abs(bbox[3] - bbox[1])
+                if box_w < 30 or box_h < 30:
+                    continue
+
+                kps = face_det.get("kps", [])
+
+                # ArcFace feature extraction using the 5 aligned landmarks
+                emb = None
+                if rec_model is not None and len(kps) == 5:
+                    try:
+                        try:
+                            from insightface.app.common import Face
+                        except ImportError:
+                            class Face(dict):
+                                def __init__(self, **kwargs):
+                                    super().__init__(**kwargs)
+                                    self.__dict__.update(kwargs)
+                        face_obj = Face(
+                            bbox=np.array(bbox, dtype=np.float32),
+                            kps=np.array(kps, dtype=np.float32),
+                            det_score=conf
+                        )
+                        rec_model.get(img_bgr, face_obj)
+                        emb = getattr(face_obj, "normed_embedding", None)
+                        if emb is None or len(emb) == 0:
+                            emb = getattr(face_obj, "embedding", None)
+                    except Exception as ex:
+                        logger.debug("ArcFace feature extraction on YOLO crop exception: %s", ex)
+
+                if emb is None or len(emb) == 0:
+                    # Fallback deterministic histogram embedding
+                    cropped_temp = self.crop_face(img_bgr, bbox)
+                    hist = cv2.calcHist([cropped_temp], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256]).flatten()
+                    norm_hist = np.linalg.norm(hist)
+                    emb = hist / (norm_hist + 1e-10)
+
+                norm = np.linalg.norm(emb)
+                emb = emb / (norm + 1e-10)
+
+                # Crop thumbnail
+                cropped = self.crop_face(img_bgr, bbox)
+                thumb_b64 = self.encode_image_base64(cropped)
+                thumb_name = f"crop_{uuid.uuid4().hex[:12]}.jpg"
+                thumb_file = settings.thumbnails_path / thumb_name
+                cv2.imwrite(str(thumb_file), cropped)
+
+                results.append(FaceDetectionResult(
+                    bbox=bbox,
+                    confidence=round(conf, 3),
+                    embedding=emb.astype(np.float32),
+                    landmarks=kps,
+                    thumbnail_base64=thumb_b64,
+                    thumbnail_filename=thumb_name
+                ))
+
+            return results
+
+        # InsightFace detection (SCRFD fallback)
         faces = self.app.get(img_bgr)
         for face in faces:
             conf = float(face.det_score)

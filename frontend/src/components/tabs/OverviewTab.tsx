@@ -232,22 +232,36 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               <Cpu size={20} color="var(--accent-primary)" />
               <div>
                 <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Inference Engine Telemetry</h3>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ArcFace Buffalo_L &amp; RetinaFace CPU Pipeline</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {!stats ? 'Loading Telemetry...' : `${stats.face_detector_type === 'yolov8_face' ? 'YOLOv8-Face' : 'SCRFD'} & ArcFace Buffalo_L CPU Pipeline`}
+                </span>
               </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.85rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Face Detector Engine</span>
+                <span className="chip chip-purple" style={{ fontSize: '0.7rem' }}>
+                  {!stats ? 'Loading...' : (stats.face_detector_type === 'yolov8_face' ? 'YOLOv8-Face (Dual-Stage)' : 'SCRFD (RetinaFace)')}
+                </span>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Embedding Dimension</span>
                 <span style={{ fontWeight: 600, fontFamily: 'JetBrains Mono, monospace' }}>512-D Normalized Vector</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Active Resolution Mode</span>
-                <span className="chip chip-info" style={{ fontSize: '0.7rem' }}>320px Low-Latency (~20-50ms)</span>
+                <span className="chip chip-info" style={{ fontSize: '0.7rem' }}>
+                  {stats?.det_size || 320}px {
+                    (stats?.det_size === 320) ? 'Low-Latency (~20-50ms)' :
+                    (stats?.det_size === 480) ? 'Balanced Quality' :
+                    (stats?.det_size === 640) ? 'High-Resolution' : 'Optimized Mode'
+                  }
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Unraid Thread Optimization</span>
-                <span style={{ fontWeight: 600 }}>Active (8 Cores Reserved)</span>
+                <span style={{ fontWeight: 600 }}>Active ({stats?.ort_num_threads || 8} Cores Allocated)</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>API Documentation</span>

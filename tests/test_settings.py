@@ -42,7 +42,8 @@ from app.db.database import (
     get_setting,
     get_all_settings,
     save_settings_bulk,
-    sync_settings_to_runtime
+    sync_settings_to_runtime,
+    get_system_stats
 )
 
 # Rules for TestSettingsManagement class:
@@ -141,16 +142,54 @@ class TestSettingsManagement(unittest.TestCase):
         os.environ["NOTIFY_ON_UNKNOWN"] = "false"
         os.environ["WEBHOOK_ONLY_KNOWN_FACES"] = "true"
         os.environ["MQTT_ONLY_KNOWN_FACES"] = "true"
+        os.environ["FACE_DETECTOR_TYPE"] = "scrfd"
+        os.environ["DET_SIZE"] = "640"
+        os.environ["ORT_NUM_THREADS"] = "4"
 
         seed_default_settings()
 
         self.assertFalse(settings.NOTIFY_ON_UNKNOWN)
         self.assertTrue(settings.WEBHOOK_ONLY_KNOWN_FACES)
         self.assertTrue(settings.MQTT_ONLY_KNOWN_FACES)
+        self.assertEqual(settings.FACE_DETECTOR_TYPE, "scrfd")
+        self.assertEqual(settings.DET_SIZE, 640)
+        self.assertEqual(settings.ORT_NUM_THREADS, 4)
 
         self.assertEqual(get_setting("notify_on_unknown"), "false")
         self.assertEqual(get_setting("webhook_only_known_faces"), "true")
         self.assertEqual(get_setting("mqtt_only_known_faces"), "true")
+        self.assertEqual(get_setting("face_detector_type"), "scrfd")
+        self.assertEqual(get_setting("det_size"), "640")
+        self.assertEqual(get_setting("ort_num_threads"), "4")
+
+        # Clean up
+        del os.environ["FACE_DETECTOR_TYPE"]
+        del os.environ["DET_SIZE"]
+        del os.environ["ORT_NUM_THREADS"]
+        save_settings_bulk({
+            "face_detector_type": "yolov8_face",
+            "det_size": 320,
+            "ort_num_threads": 8
+        })
+
+    def test_det_size_and_threads_runtime_sync_and_stats(self):
+        # Update resolution and thread count
+        save_settings_bulk({
+            "det_size": 480,
+            "ort_num_threads": 16,
+            "face_detector_type": "yolov8_face"
+        })
+
+        # Verify active runtime settings singleton immediately updated
+        self.assertEqual(settings.DET_SIZE, 480)
+        self.assertEqual(settings.ORT_NUM_THREADS, 16)
+        self.assertEqual(settings.FACE_DETECTOR_TYPE, "yolov8_face")
+
+        # Verify get_system_stats returns the updated values
+        stats = get_system_stats()
+        self.assertEqual(stats["det_size"], 480)
+        self.assertEqual(stats["ort_num_threads"], 16)
+        self.assertEqual(stats["face_detector_type"], "yolov8_face")
 
 if __name__ == "__main__":
     unittest.main()

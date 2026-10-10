@@ -22,6 +22,7 @@ interface HeaderProps {
   user: UserType;
   onLogout: () => void;
   engineReady?: boolean;
+  detectorType?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   user,
   onLogout,
   engineReady = true,
+  detectorType,
 }) => {
   const navTabs: { id: TabId; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'overview', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
@@ -88,10 +90,30 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Engine Readiness Pill */}
-        <div className="chip chip-success" style={{ padding: '0.25rem 0.6rem' }}>
-          <span className="pulsing-dot" />
-          <span>{engineReady ? 'Engine Ready' : 'Warming Up'}</span>
+        {/* Engine Readiness & Detector Engine Pill */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+          <div className="chip chip-success" style={{ padding: '0.25rem 0.6rem' }}>
+            <span className="pulsing-dot" />
+            <span>{engineReady ? 'Engine Ready' : 'Warming Up'}</span>
+          </div>
+          {detectorType && (
+            <div
+              className="chip chip-purple"
+              style={{
+                padding: '0.25rem 0.65rem',
+                fontWeight: 600,
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
+              onClick={() => onTabChange('settings')}
+              title={`Active Detector Engine: ${detectorType === 'yolov8_face' ? 'YOLOv8-Face' : detectorType}. Click to configure in Settings.`}
+            >
+              <span>{detectorType === 'yolov8_face' ? 'YOLOv8-Face' : (detectorType === 'scrfd' ? 'SCRFD' : detectorType)}</span>
+            </div>
+          )}
         </div>
       </div>
 

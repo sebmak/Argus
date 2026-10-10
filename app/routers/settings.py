@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/v1/settings", tags=["System Settings"])
 # 3. Numeric parameters must have valid bounds (e.g. ge, le) to guard against invalid engine configurations.
 class SettingsUpdateRequest(BaseModel):
     # Face Recognition
+    face_detector_type: Optional[str] = Field(None, description="Detector engine: 'yolov8_face' or 'scrfd'")
     detection_confidence: Optional[float] = Field(None, ge=0.05, le=1.0, description="Minimum face detection confidence (0.05-1.0)")
     similarity_threshold: Optional[float] = Field(None, ge=0.1, le=1.0, description="Cosine similarity threshold for known identity (0.1-1.0)")
     notification_threshold: Optional[float] = Field(None, ge=0.1, le=1.0, description="Minimum confidence/similarity before dispatching notifications (0.1-1.0)")

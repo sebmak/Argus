@@ -7,7 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PUID=99 \
     PGID=100 \
     UMASK=002 \
-    FACE_MODEL_NAME=buffalo_l
+    FACE_MODEL_NAME=buffalo_l \
+    FACE_DETECTOR_TYPE=yolov8_face
 
 # Install necessary system libraries for OpenCV, ONNX Runtime CPU, and Unraid privilege dropping (gosu)
 RUN apt-get update && apt-get install -y --no-install-recommends \

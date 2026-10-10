@@ -59,9 +59,14 @@ export interface SystemStats {
   unrecognized_count: number;
   accuracy_rate: number;
   recent_activity: RecentActivity[];
+  det_size?: number;
+  ort_num_threads?: number;
+  face_detector_type?: string;
+  face_model_name?: string;
 }
 
 export interface SystemSettings {
+  face_detector_type?: string;
   detection_confidence: number;
   similarity_threshold: number;
   notification_threshold: number;

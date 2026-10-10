@@ -128,6 +128,7 @@ const MainAppContent: React.FC = () => {
         user={user}
         onLogout={handleLogout}
         engineReady={true}
+        detectorType={stats?.face_detector_type}
       />
 
       {/* Main Tab Content Container */}
@@ -167,7 +168,7 @@ const MainAppContent: React.FC = () => {
           )}
 
           {activeTab === 'settings' && (
-            <SettingsTab />
+            <SettingsTab onSettingsSaved={fetchStats} />
           )}
 
           {activeTab === 'guide' && (

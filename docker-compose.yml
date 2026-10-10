@@ -23,6 +23,7 @@ services:
       
       # Model & Face Engine Settings
       - FACE_MODEL_NAME=buffalo_l        # 'buffalo_l' (high accuracy) or 'buffalo_s' (ultra-fast)
+      - FACE_DETECTOR_TYPE=yolov8_face   # 'yolov8_face' (dual-stage) or 'scrfd'
       - SIMILARITY_THRESHOLD=0.45       # Matching threshold (0.40 - 0.55 recommended)
       - DETECTION_CONFIDENCE=0.50       # Minimum face detection confidence
       - MAX_SAMPLES_PER_PERSON=50       # Maximum face samples per entity

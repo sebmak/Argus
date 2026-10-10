@@ -27,10 +27,11 @@ def _resolve_config_dir() -> str:
 # 1. Variables and configuration properties must be declared at the top of the class.
 # 2. Defaults are read from environment variables with safe fallbacks.
 # 3. Dynamic runtime overrides are synchronized with the SQLite settings table without container restarts.
+# 4. Supports detector engine selection ('yolov8_face' or 'scrfd') with dedicated YOLO model parameters.
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "Household Face Detection API"
-    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.10")
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.12")
     DEBUG: bool = False
 
     # Storage & Unraid Config Paths
@@ -40,6 +41,8 @@ class Settings(BaseSettings):
     
     # Face Recognition Settings
     FACE_MODEL_NAME: str = os.getenv("FACE_MODEL_NAME", "buffalo_l")  # 'buffalo_l' or 'buffalo_s'
+    FACE_DETECTOR_TYPE: str = os.getenv("FACE_DETECTOR_TYPE", "yolov8_face")  # 'yolov8_face' or 'scrfd'
+    YOLO_FACE_MODEL_NAME: str = os.getenv("YOLO_FACE_MODEL_NAME", "yolov8n-face.onnx")
     SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.45"))
     DETECTION_CONFIDENCE: float = float(os.getenv("DETECTION_CONFIDENCE", "0.60"))
     MAX_SAMPLES_PER_PERSON: int = int(os.getenv("MAX_SAMPLES_PER_PERSON", "50"))
