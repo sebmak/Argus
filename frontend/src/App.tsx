@@ -122,22 +122,18 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  const isNativeAndroid = typeof navigator !== 'undefined' && navigator.userAgent.includes('FaceEngineAndroid');
-
   return (
-    <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', paddingBottom: isNativeAndroid ? '1.5rem' : '3rem', paddingTop: isNativeAndroid ? '0.5rem' : 0 }}>
-      {/* Sticky App Header (hidden on native Android companion where native bottom nav / rail is used) */}
-      {!isNativeAndroid && (
-        <Header
-          activeTab={activeTab}
-          onTabChange={navigateToTab}
-          unrecognizedCount={stats?.unrecognized_count || 0}
-          user={user}
-          onLogout={handleLogout}
-          engineReady={true}
-          detectorType={stats?.face_detector_type}
-        />
-      )}
+    <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', paddingBottom: '3rem' }}>
+      {/* Sticky App Header */}
+      <Header
+        activeTab={activeTab}
+        onTabChange={navigateToTab}
+        unrecognizedCount={stats?.unrecognized_count || 0}
+        user={user}
+        onLogout={handleLogout}
+        engineReady={true}
+        detectorType={stats?.face_detector_type}
+      />
 
       {/* Main Tab Content Container */}
       <main className="container">
