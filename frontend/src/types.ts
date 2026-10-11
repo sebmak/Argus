@@ -181,3 +181,22 @@ export interface SandboxResult {
   faces: SandboxFace[];
   unrecognized_count?: number;
 }
+
+export interface EventLog {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'success' | 'warning' | 'error';
+  category: 'motion' | 'detection' | 'webhook' | 'mqtt' | 'system' | 'error';
+  event_type: string;
+  message: string;
+  details: Record<string, any>;
+  created_at: string;
+}
+
+export interface EventLogSummary {
+  total_events: number;
+  error_count_24h: number;
+  motion_transitions_today: number;
+  detections_today: number;
+  broadcasts_today: number;
+}

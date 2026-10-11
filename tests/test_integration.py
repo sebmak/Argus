@@ -100,7 +100,7 @@ class TestEndToEndSystemIntegration(unittest.TestCase):
     def test_01_database_and_admin_auth(self):
         """Verify DB migrations initialized all tables and seeded default admin."""
         status = get_migration_status()
-        self.assertEqual(status["database_version"], "1.2.0")
+        self.assertEqual(status["database_version"], "1.3.0")
 
         # Admin user authentication
         admin = verify_user_credentials("admin", "admin123")
@@ -329,25 +329,27 @@ class TestEndToEndSystemIntegration(unittest.TestCase):
         self.assertAlmostEqual(settings.SIMILARITY_THRESHOLD, 0.52, places=2)
 
     def test_08_schema_rollback_and_recovery(self):
-        """Test non-destructive migration rollback to 1.0.0 and subsequent restoration to 1.2.0."""
+        """Test non-destructive migration rollback to 1.0.0 and subsequent restoration to 1.3.0."""
         # Rollback to 1.0.0
         res_down = rollback_migrations("1.0.0")
         self.assertEqual(res_down["status"], "success")
         self.assertEqual(res_down["current_app_version"], "1.0.0")
         self.assertIn("dynamic_settings_and_telemetry", res_down["rolled_back"])
         self.assertIn("household_and_visitor_classification", res_down["rolled_back"])
+        self.assertIn("system_event_logs", res_down["rolled_back"])
 
         # Verify core persons remain safe after rollback
         persons = get_all_persons()
         alice = [p for p in persons if p["name"] == "Alice Resident"]
         self.assertEqual(len(alice), 1)
 
-        # Roll forward back to 1.2.0
-        res_up = run_migrations("1.2.0")
+        # Roll forward back to 1.3.0
+        res_up = run_migrations("1.3.0")
         self.assertEqual(res_up["status"], "success")
-        self.assertEqual(res_up["current_app_version"], "1.2.0")
+        self.assertEqual(res_up["current_app_version"], "1.3.0")
         self.assertIn("dynamic_settings_and_telemetry", res_up["applied"])
         self.assertIn("household_and_visitor_classification", res_up["applied"])
+        self.assertIn("system_event_logs", res_up["applied"])
 
     def test_09_unrecognized_deduplication_and_best_shot(self):
         """Test deduplicating burst unrecognized frames into highest confidence best-shots."""

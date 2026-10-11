@@ -939,3 +939,143 @@ def sync_settings_to_runtime():
         )
     except Exception as e:
         logger.warning("Error syncing settings to runtime: %s", e)
+
+
+# --- Event Log Helpers ---
+
+def record_event_log(
+    level: str,
+    category: str,
+    event_type: str,
+    message: str,
+    details: Optional[Dict[str, Any]] = None
+) -> str:
+    """
+    Records an operational system event log.
+    Automatically maintains rolling capacity by pruning logs beyond 10,000 entries.
+    """
+    log_id = f"evt_{uuid.uuid4().hex[:16]}"
+    details_json = json.dumps(details or {})
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO event_logs (id, level, category, event_type, message, details)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (log_id, level, category, event_type, message, details_json))
+            
+            # Keep table size bounded: delete oldest entries beyond 10,000 rows
+            cursor.execute("""
+                DELETE FROM event_logs
+                WHERE id IN (
+                    SELECT id FROM event_logs
+                    ORDER BY timestamp DESC
+                    LIMIT -1 OFFSET 10000
+                )
+            """)
+            conn.commit()
+    except Exception as e:
+        logger.debug("Failed to record event log in database: %s", e)
+    return log_id
+
+
+def get_event_logs(
+    limit: int = 100,
+    offset: int = 0,
+    category: Optional[str] = None,
+    level: Optional[str] = None,
+    search: Optional[str] = None
+) -> Dict[str, Any]:
+    """Retrieve filtered event logs with total count."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        query = "SELECT id, timestamp, level, category, event_type, message, details, created_at FROM event_logs WHERE 1=1"
+        count_query = "SELECT COUNT(*) FROM event_logs WHERE 1=1"
+        params: List[Any] = []
+
+        if category and category.lower() != "all":
+            query += " AND category = ?"
+            count_query += " AND category = ?"
+            params.append(category.lower())
+
+        if level and level.lower() != "all":
+            query += " AND level = ?"
+            count_query += " AND level = ?"
+            params.append(level.lower())
+
+        if search:
+            query += " AND (message LIKE ? OR details LIKE ? OR event_type LIKE ?)"
+            count_query += " AND (message LIKE ? OR details LIKE ? OR event_type LIKE ?)"
+            search_param = f"%{search}%"
+            params.extend([search_param, search_param, search_param])
+
+        cursor.execute(count_query, params)
+        total = cursor.fetchone()[0]
+
+        query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
+        cursor.execute(query, params + [limit, offset])
+        rows = cursor.fetchall()
+
+        logs = []
+        for r in rows:
+            item = dict(r)
+            try:
+                item["details"] = json.loads(item.get("details") or "{}")
+            except Exception:
+                item["details"] = {}
+            logs.append(item)
+
+        return {
+            "total": total,
+            "logs": logs
+        }
+
+
+def clear_event_logs(category: Optional[str] = None, before_date: Optional[str] = None) -> int:
+    """Clears matching or all event logs from the database."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        query = "DELETE FROM event_logs WHERE 1=1"
+        params: List[Any] = []
+
+        if category and category.lower() != "all":
+            query += " AND category = ?"
+            params.append(category.lower())
+
+        if before_date:
+            query += " AND timestamp < ?"
+            params.append(before_date)
+
+        cursor.execute(query, params)
+        deleted_count = cursor.rowcount
+        conn.commit()
+        return deleted_count
+
+
+def get_event_log_summary() -> Dict[str, Any]:
+    """Calculates operational summary statistics for the Event Log dashboard."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) FROM event_logs")
+        total_events = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM event_logs WHERE level = 'error' AND datetime(timestamp) >= datetime('now', '-24 hours')")
+        error_count_24h = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM event_logs WHERE category = 'motion' AND DATE(timestamp) = DATE('now')")
+        motion_transitions_today = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM event_logs WHERE category = 'detection' AND DATE(timestamp) = DATE('now')")
+        detections_today = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM event_logs WHERE category IN ('webhook', 'mqtt') AND DATE(timestamp) = DATE('now')")
+        broadcasts_today = cursor.fetchone()[0]
+
+        return {
+            "total_events": total_events,
+            "error_count_24h": error_count_24h,
+            "motion_transitions_today": motion_transitions_today,
+            "detections_today": detections_today,
+            "broadcasts_today": broadcasts_today
+        }

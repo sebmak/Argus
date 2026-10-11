@@ -11,6 +11,7 @@ import { SandboxTab } from './components/tabs/SandboxTab';
 import { RtspTab } from './components/tabs/RtspTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
 import { GuideTab } from './components/tabs/GuideTab';
+import { EventsTab } from './components/tabs/EventsTab';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ScanFace } from 'lucide-react';
 
@@ -165,6 +166,10 @@ const MainAppContent: React.FC = () => {
 
           {activeTab === 'rtsp' && (
             <RtspTab />
+          )}
+
+          {activeTab === 'events' && (
+            <EventsTab />
           )}
 
           {activeTab === 'settings' && (

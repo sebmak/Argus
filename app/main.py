@@ -17,9 +17,11 @@ from .routers import (
     detections_router,
     auth_router,
     rtsp_router,
-    settings_router
+    settings_router,
+    events_router
 )
 from .core.rtsp_worker import rtsp_worker
+from .db.database import record_event_log
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +40,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Engine warm-up deferred or running in mock mode: %s", e)
 
+    record_event_log(
+        level="info",
+        category="system",
+        event_type="system_start",
+        message=f"{settings.APP_NAME} started (v{settings.APP_VERSION}, detector: {settings.FACE_DETECTOR_TYPE})",
+        details={"version": settings.APP_VERSION, "detector": settings.FACE_DETECTOR_TYPE, "model": settings.FACE_MODEL_NAME}
+    )
+
     # Auto-start RTSP stream processing if enabled
     if settings.RTSP_ENABLED and settings.RTSP_URL:
         logger.info("Auto-starting RTSP stream worker on background thread...")
@@ -46,6 +56,13 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Shutting down Face Detection service...")
+    record_event_log(
+        level="info",
+        category="system",
+        event_type="system_stop",
+        message=f"{settings.APP_NAME} service shutting down",
+        details={}
+    )
     rtsp_worker.stop()
 
 app = FastAPI(
@@ -74,6 +91,7 @@ app.include_router(persons_router, dependencies=[Depends(get_current_user)])
 app.include_router(detections_router, dependencies=[Depends(get_current_user)])
 app.include_router(rtsp_router, dependencies=[Depends(get_current_user)])
 app.include_router(settings_router, dependencies=[Depends(get_current_user)])
+app.include_router(events_router, dependencies=[Depends(get_current_user)])
 
 # Static Web Application Files
 static_dir = Path(__file__).parent / "static"

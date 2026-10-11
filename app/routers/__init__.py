@@ -6,3 +6,4 @@ from .detections import router as detections_router
 from .auth import router as auth_router
 from .rtsp import router as rtsp_router
 from .settings import router as settings_router
+from .events import router as events_router

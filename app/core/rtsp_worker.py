@@ -17,7 +17,8 @@ from .events import dispatch_detection_event
 from ..db.database import (
     get_all_active_embeddings,
     record_detection,
-    update_detection_best_shot
+    update_detection_best_shot,
+    record_event_log
 )
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 # 6. Aggregates unknown face detections across a sliding timeframe window to record only the highest-confidence best shot.
 # 7. Annotates detection alerts with is_household classification for external webhook and MQTT branching.
 # 8. Skips heavy face inference on static scenes via fast frame difference motion gating, with periodic heartbeat inference safety fallback.
+# 9. Logs state transitions (idle vs active motion), detections, stream connectivity, and errors to the event log.
 class RtspStreamWorker:
     thread: Optional[threading.Thread] = None
     stop_event: threading.Event = threading.Event()
@@ -46,6 +48,8 @@ class RtspStreamWorker:
     heartbeat_seconds: float = 10.0
     last_motion_time: float = 0.0
     last_force_infer_time: float = 0.0
+    last_logged_motion_state: Optional[bool] = None
+    last_motion_ratio: float = 0.0
     prev_motion_frame: Optional[Any] = None
     last_frame: Optional[Any] = None
     last_detection: Optional[Dict[str, Any]] = None
@@ -196,6 +200,7 @@ class RtspStreamWorker:
             changed_pixels = int(cv2.countNonZero(thresh))
             total_pixels = thresh.shape[0] * thresh.shape[1]
             motion_ratio = changed_pixels / float(max(1, total_pixels))
+            self.last_motion_ratio = motion_ratio
 
             # Store current frame as baseline for next motion check
             self.prev_motion_frame = gray
@@ -225,7 +230,15 @@ class RtspStreamWorker:
                 self.prev_motion_frame = None
                 self.last_motion_time = 0.0
                 self.last_force_infer_time = time.time()
+                self.last_logged_motion_state = None
                 logger.info("Successfully connected to RTSP stream '%s'", self.camera_name)
+                record_event_log(
+                    level="success",
+                    category="system",
+                    event_type="rtsp_connected",
+                    message=f"Connected to RTSP stream '{self.camera_name}' ({self.url})",
+                    details={"camera": self.camera_name, "url": self.url, "fps": self.fps}
+                )
 
                 last_inference_time = 0.0
                 frame_count = 0
@@ -238,6 +251,13 @@ class RtspStreamWorker:
                         logger.warning("RTSP stream disconnected or end of stream reached.")
                         self.is_connected = False
                         self.last_error = "Stream disconnected"
+                        record_event_log(
+                            level="warning",
+                            category="system",
+                            event_type="rtsp_disconnected",
+                            message=f"RTSP stream '{self.camera_name}' disconnected",
+                            details={"camera": self.camera_name}
+                        )
                         break
 
                     self.last_frame = frame
@@ -261,6 +281,34 @@ class RtspStreamWorker:
                                 self.last_motion_time = now
 
                             is_motion_active = (now - self.last_motion_time <= self.motion_hangover_seconds)
+
+                            # Log state transitions between Idle and Motion Active
+                            if self.last_logged_motion_state != is_motion_active:
+                                self.last_logged_motion_state = is_motion_active
+                                if is_motion_active:
+                                    record_event_log(
+                                        level="info",
+                                        category="motion",
+                                        event_type="motion_active",
+                                        message=f"Camera '{self.camera_name}' detected motion (exited idle mode)",
+                                        details={
+                                            "camera": self.camera_name,
+                                            "motion_threshold": self.motion_threshold,
+                                            "motion_ratio": round(self.last_motion_ratio, 4)
+                                        }
+                                    )
+                                else:
+                                    record_event_log(
+                                        level="info",
+                                        category="motion",
+                                        event_type="motion_idle",
+                                        message=f"Camera '{self.camera_name}' entered idle mode (motionless)",
+                                        details={
+                                            "camera": self.camera_name,
+                                            "hangover_seconds": self.motion_hangover_seconds
+                                        }
+                                    )
+
                             is_heartbeat = (now - self.last_force_infer_time >= self.heartbeat_seconds)
 
                             if not is_motion_active and not is_heartbeat:
@@ -276,6 +324,13 @@ class RtspStreamWorker:
                 self.is_connected = False
                 self.last_error = str(e)
                 logger.warning("RTSP connection error: %s. Reconnecting in %ds...", e, reconnect_delay)
+                record_event_log(
+                    level="error",
+                    category="error",
+                    event_type="rtsp_error",
+                    message=f"RTSP connection error on '{self.camera_name}': {e}",
+                    details={"camera": self.camera_name, "error": str(e), "reconnect_delay": reconnect_delay}
+                )
             finally:
                 if cap is not None:
                     cap.release()
@@ -441,6 +496,21 @@ class RtspStreamWorker:
                         "frame_count": 1
                     })
 
+                    record_event_log(
+                        level="warning" if settings.NOTIFY_ON_UNKNOWN else "info",
+                        category="detection",
+                        event_type="detection_unrecognized",
+                        message=f"Unrecognized face detected on '{self.camera_name}' ({det_confidence * 100:.1f}% confidence)",
+                        details={
+                            "camera": self.camera_name,
+                            "confidence": round(det_confidence, 3),
+                            "detection_id": det_id,
+                            "thumbnail": det.thumbnail_filename,
+                            "thumbnail_url": f"/api/v1/thumbnails/{det.thumbnail_filename}",
+                            "bbox": det.bbox
+                        }
+                    )
+
                     allow_unknown_external = (
                         (settings.RTSP_WEBHOOK_URL and not settings.WEBHOOK_ONLY_KNOWN_FACES) or
                         (settings.MQTT_ENABLED and not settings.MQTT_ONLY_KNOWN_FACES and not settings.WEBHOOK_ONLY_KNOWN_FACES)
@@ -481,6 +551,25 @@ class RtspStreamWorker:
                         confidence=det_confidence,
                         is_household=is_hh
                     )
+
+                    record_event_log(
+                        level="success",
+                        category="detection",
+                        event_type="detection_matched",
+                        message=f"Face Recognized: '{person_name}' ({'Household' if is_hh else 'Visitor'}, {match_info['similarity'] * 100:.1f}%) on {self.camera_name}",
+                        details={
+                            "camera": self.camera_name,
+                            "person_name": person_name,
+                            "is_household": is_hh,
+                            "similarity": round(match_info["similarity"], 3),
+                            "confidence": round(det_confidence, 3),
+                            "detection_id": det_id,
+                            "thumbnail": det.thumbnail_filename,
+                            "thumbnail_url": f"/api/v1/thumbnails/{det.thumbnail_filename}",
+                            "bbox": det.bbox
+                        }
+                    )
+
                     should_notify = (match_info["similarity"] >= settings.NOTIFICATION_THRESHOLD)
 
                 if not should_notify:
@@ -515,6 +604,13 @@ class RtspStreamWorker:
 
         except Exception as e:
             logger.error("Error during RTSP frame inference: %s", e)
+            record_event_log(
+                level="error",
+                category="error",
+                event_type="inference_error",
+                message=f"Inference error during RTSP processing on '{self.camera_name}': {e}",
+                details={"camera": self.camera_name, "error": str(e)}
+            )
 
 # Global Worker Singleton
 rtsp_worker = RtspStreamWorker()

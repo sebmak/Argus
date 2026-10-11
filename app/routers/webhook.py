@@ -9,7 +9,8 @@ from ..db.database import (
     create_person,
     add_face_sample,
     get_person_by_id,
-    record_detection
+    record_detection,
+    record_event_log
 )
 from ..config import settings
 
@@ -127,6 +128,21 @@ async def ingest_protect_webhook(
     logger.info(
         "Successfully ingested UniFi Protect face sample for '%s' (camera: %s, sample: %s, total: %d)",
         person_name, parsed.camera_id, sample_id, total_samples
+    )
+
+    record_event_log(
+        level="success",
+        category="webhook",
+        event_type="webhook_received",
+        message=f"UniFi Protect webhook trained sample for '{person_name}' (camera: {parsed.camera_id}, total: {total_samples})",
+        details={
+            "person_id": person_id,
+            "person_name": person_name,
+            "camera_id": parsed.camera_id,
+            "event_id": parsed.event_id,
+            "sample_id": sample_id,
+            "total_samples": total_samples
+        }
     )
 
     return WebhookResponse(

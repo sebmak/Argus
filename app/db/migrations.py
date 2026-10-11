@@ -485,6 +485,42 @@ class MigrationManager:
             down_fn=down_v1_2_0
         ))
 
+        # ----------------------------------------------------------------------
+        # Migration 4 (v1.3.0): System Event Logs
+        # ----------------------------------------------------------------------
+        def up_v1_3_0(conn: sqlite3.Connection):
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS event_logs (
+                    id TEXT PRIMARY KEY,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    level TEXT NOT NULL DEFAULT 'info',
+                    category TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    details TEXT DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_logs_timestamp ON event_logs(timestamp DESC);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_logs_category ON event_logs(category);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_logs_level ON event_logs(level);")
+
+        def down_v1_3_0(conn: sqlite3.Connection):
+            # Non-destructive rollback: drop secondary indexes, preserve log data
+            conn.execute("DROP INDEX IF EXISTS idx_event_logs_timestamp;")
+            conn.execute("DROP INDEX IF EXISTS idx_event_logs_category;")
+            conn.execute("DROP INDEX IF EXISTS idx_event_logs_level;")
+
+        self.register(MigrationStep(
+            migration_id=4,
+            version_tag="1.3.0",
+            name="system_event_logs",
+            description="Adds event_logs table and indexes for idle transitions, detections, webhooks, MQTT, and errors.",
+            up_fn=up_v1_3_0,
+            down_fn=down_v1_3_0
+        ))
+
 
 # Global Singleton Migration Manager
 migration_manager = MigrationManager()

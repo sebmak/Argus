@@ -9,11 +9,12 @@ import {
   BookOpen,
   LogOut,
   ScanFace,
-  UserCheck
+  UserCheck,
+  ScrollText
 } from 'lucide-react';
 import type { User as UserType } from '../types';
 
-export type TabId = 'overview' | 'review' | 'persons' | 'sandbox' | 'rtsp' | 'settings' | 'guide';
+export type TabId = 'overview' | 'review' | 'persons' | 'sandbox' | 'rtsp' | 'events' | 'settings' | 'guide';
 
 interface HeaderProps {
   activeTab: TabId;
@@ -45,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'persons', label: 'Household', icon: <Users size={16} /> },
     { id: 'sandbox', label: 'Test Sandbox', icon: <FlaskConical size={16} /> },
     { id: 'rtsp', label: 'RTSP & MQTT', icon: <Radio size={16} /> },
+    { id: 'events', label: 'Event Log', icon: <ScrollText size={16} /> },
     { id: 'settings', label: 'Settings', icon: <Settings size={16} /> },
     { id: 'guide', label: 'Integrations', icon: <BookOpen size={16} /> },
   ];
