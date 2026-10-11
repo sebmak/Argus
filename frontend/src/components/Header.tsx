@@ -8,7 +8,6 @@ import {
   Settings,
   BookOpen,
   LogOut,
-  ScanFace,
   UserCheck,
   ScrollText
 } from 'lucide-react';
@@ -79,19 +78,18 @@ export const Header: React.FC<HeaderProps> = ({
           }}
           style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer' }}
         >
-          <div style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            boxShadow: '0 0 15px rgba(99, 102, 241, 0.4)'
-          }}>
-            <ScanFace size={22} />
-          </div>
+          <img
+            src="/favicon.png"
+            alt="FaceEngine Logo"
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              objectFit: 'cover',
+              boxShadow: '0 0 16px rgba(99, 102, 241, 0.45)',
+              border: '1px solid rgba(99, 102, 241, 0.35)'
+            }}
+          />
           <div>
             <div className="brand-title" style={{ fontSize: '1.1rem', fontWeight: 800, lineHeight: 1.1 }}>
               FaceEngine

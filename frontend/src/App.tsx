@@ -14,7 +14,6 @@ import { SettingsTab } from './components/tabs/SettingsTab';
 import { GuideTab } from './components/tabs/GuideTab';
 import { EventsTab } from './components/tabs/EventsTab';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { ScanFace } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
   const { showToast } = useToast();
@@ -93,15 +92,18 @@ const MainAppContent: React.FC = () => {
         background: 'radial-gradient(circle at 50% 30%, #1e1b4b 0%, #090d16 70%)',
         color: '#cbd5e1'
       }}>
-        <div style={{
-          width: '56px', height: '56px', borderRadius: '16px',
-          background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff',
-          boxShadow: '0 0 30px rgba(99, 102, 241, 0.4)'
-        }}>
-          <ScanFace size={32} />
-        </div>
+        <img
+          src="/favicon.png"
+          alt="FaceEngine Logo"
+          style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '16px',
+            objectFit: 'cover',
+            boxShadow: '0 0 35px rgba(99, 102, 241, 0.55)',
+            border: '1px solid rgba(99, 102, 241, 0.4)'
+          }}
+        />
         <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>Connecting to Household Vision Engine...</div>
       </div>
     );

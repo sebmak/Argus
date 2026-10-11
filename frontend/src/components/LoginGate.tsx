@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Lock, User, KeyRound, Loader2, AlertCircle } from 'lucide-react';
+import { Lock, User, KeyRound, Loader2, AlertCircle } from 'lucide-react';
 import { apiFetch } from '../api';
 import type { User as UserType } from '../types';
 
@@ -53,21 +53,21 @@ export const LoginGate: React.FC<LoginGateProps> = ({ onLoginSuccess }) => {
         border: '1px solid rgba(255, 255, 255, 0.12)',
         textAlign: 'center'
       }}>
-        {/* Glowing Badge */}
-        <div style={{
-          width: '68px',
-          height: '68px',
-          margin: '0 auto 1.5rem',
-          borderRadius: '20px',
-          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)',
-          border: '1px solid rgba(99, 102, 241, 0.4)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 0 25px rgba(99, 102, 241, 0.3)',
-          color: 'var(--accent-primary)'
-        }}>
-          <ShieldCheck size={36} />
+        {/* Glowing Logo */}
+        <div style={{ margin: '0 auto 1.5rem', width: 'fit-content' }}>
+          <img
+            src="/favicon.png"
+            alt="FaceEngine Logo"
+            style={{
+              width: '76px',
+              height: '76px',
+              borderRadius: '22px',
+              objectFit: 'cover',
+              boxShadow: '0 0 35px rgba(99, 102, 241, 0.55)',
+              border: '1px solid rgba(99, 102, 241, 0.4)',
+              display: 'block'
+            }}
+          />
         </div>
 
         <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: '#fff' }}>

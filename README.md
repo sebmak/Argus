@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="FaceEngine Logo" width="140" height="140" style="border-radius: 28px;" />
+</p>
+
 # Household Face Detection API & Web Dashboard
 
 A self-hosted, privacy-first Docker container providing real-time face detection, recognition, and auto-training capabilities for your household, built for seamless integration with **Unraid**, **UniFi Protect**, and **Home Assistant**.
