@@ -67,4 +67,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.coroutines.android)
+
+    // Unit Testing
+    testImplementation(libs.junit)
 }
