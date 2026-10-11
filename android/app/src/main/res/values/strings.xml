@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FaceEngine</string>
+    <string name="title_server_setup">Server Configuration</string>
+    <string name="server_setup_heading">Connect to FaceEngine</string>
+    <string name="server_setup_subheading">Enter your Unraid server LAN IP or local domain to manage face detection and review queue</string>
+
+    <string name="label_protocol">Protocol</string>
+    <string name="protocol_http">http://</string>
+    <string name="protocol_https">https://</string>
+
+    <string name="hint_host">IP or Host (e.g. 192.168.1.104)</string>
+    <string name="hint_port">Port (e.g. 8000)</string>
+
+    <string name="btn_test_connection">Test Connection</string>
+    <string name="btn_save_and_connect">Save &amp; Connect</string>
+    <string name="btn_change_server">Change Server</string>
+    <string name="btn_retry">Retry</string>
+
+    <string name="status_testing">Pinging server /health endpoint...</string>
+    <string name="status_connected_success">✓ Connected: %1$s v%2$s (Model: %3$s)</string>
+    <string name="status_connection_failed">✗ Connection failed: %1$s</string>
+    <string name="error_empty_host">Please provide an IP address or hostname.</string>
+    <string name="error_invalid_port">Please enter a valid port number between 1 and 65535.</string>
+
+    <string name="offline_title">Unable to reach FaceEngine server</string>
+    <string name="offline_message">Please check that your device is connected to your home Wi-Fi and that the container is running on your server.</string>
+    <string name="offline_retry">Reconnect</string>
+    <string name="dialog_switch_server_title">Switch Server</string>
+    <string name="dialog_switch_server_message">Would you like to connect to a different IP or domain?</string>
+</resources>

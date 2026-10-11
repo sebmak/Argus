@@ -41,6 +41,11 @@ A self-hosted, privacy-first Docker container providing real-time face detection
   * Adjust detection confidence, known member similarity thresholds, notification thresholds, RTSP feeds, and MQTT broker settings directly inside the **⚙️ Settings** tab.
   * Changes are persistently saved to SQLite (`faces.db`) and immediately synchronized across running background workers without restarting the Docker container!
 
+* **📱 Native Android Companion App (`android/`)**:
+  * Dedicated companion app with custom server IP/domain configurator and local persistent storage.
+  * Real-time connectivity tester pinging the server `/health` endpoint before connecting.
+  * Full feature parity with the web dashboard, hardware back-navigation for tab history, pull-to-refresh, and image upload picker.
+
 * **Unraid & CPU Optimized**:
   * Native Unraid `/config` path support.
   * Non-root permission management via `PUID=99` / `PGID=100` (`nobody:users`), preventing file permission lockouts on your cache/array.
