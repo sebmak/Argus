@@ -32,7 +32,7 @@ def _resolve_config_dir() -> str:
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "Household Face Detection API"
-    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.16")
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.17")
     DEBUG: bool = False
 
     # Storage & Unraid Config Paths
