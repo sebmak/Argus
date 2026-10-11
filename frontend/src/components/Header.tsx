@@ -13,6 +13,7 @@ import {
   ScrollText
 } from 'lucide-react';
 import type { User as UserType } from '../types';
+import { getPathForTab } from '../router';
 
 export type TabId = 'overview' | 'review' | 'persons' | 'sandbox' | 'rtsp' | 'events' | 'settings' | 'guide';
 
@@ -68,7 +69,16 @@ export const Header: React.FC<HeaderProps> = ({
     }}>
       {/* Brand & Status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer' }} onClick={() => onTabChange('overview')}>
+        <a
+          href={getPathForTab('overview')}
+          onClick={(e) => {
+            if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+              e.preventDefault();
+              onTabChange('overview');
+            }
+          }}
+          style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer' }}
+        >
           <div style={{
             width: '36px',
             height: '36px',
@@ -90,7 +100,7 @@ export const Header: React.FC<HeaderProps> = ({
               Household Vision
             </div>
           </div>
-        </div>
+        </a>
 
         {/* Engine Readiness & Detector Engine Pill */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
@@ -99,7 +109,8 @@ export const Header: React.FC<HeaderProps> = ({
             <span>{engineReady ? 'Engine Ready' : 'Warming Up'}</span>
           </div>
           {detectorType && (
-            <div
+            <a
+              href={getPathForTab('settings')}
               className="chip chip-purple"
               style={{
                 padding: '0.25rem 0.65rem',
@@ -108,13 +119,19 @@ export const Header: React.FC<HeaderProps> = ({
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.35rem'
+                gap: '0.35rem',
+                textDecoration: 'none',
               }}
-              onClick={() => onTabChange('settings')}
+              onClick={(e) => {
+                if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                  e.preventDefault();
+                  onTabChange('settings');
+                }
+              }}
               title={`Active Detector Engine: ${detectorType === 'yolov8_face' ? 'YOLOv8-Face' : detectorType}. Click to configure in Settings.`}
             >
               <span>{detectorType === 'yolov8_face' ? 'YOLOv8-Face' : (detectorType === 'scrfd' ? 'SCRFD' : detectorType)}</span>
-            </div>
+            </a>
           )}
         </div>
       </div>
@@ -123,10 +140,17 @@ export const Header: React.FC<HeaderProps> = ({
       <nav style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflowX: 'auto', padding: '0.25rem 0' }}>
         {navTabs.map(tab => {
           const isActive = activeTab === tab.id;
+          const href = getPathForTab(tab.id);
           return (
-            <button
+            <a
               key={tab.id}
-              onClick={() => onTabChange(tab.id)}
+              href={href}
+              onClick={(e) => {
+                if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                  e.preventDefault();
+                  onTabChange(tab.id);
+                }
+              }}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -140,7 +164,8 @@ export const Header: React.FC<HeaderProps> = ({
                 border: isActive ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid transparent',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                textDecoration: 'none',
               }}
               onMouseEnter={e => {
                 if (!isActive) e.currentTarget.style.color = 'var(--text-main)';
@@ -164,7 +189,7 @@ export const Header: React.FC<HeaderProps> = ({
                   {tab.badge}
                 </span>
               )}
-            </button>
+            </a>
           );
         })}
       </nav>

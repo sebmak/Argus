@@ -3,7 +3,8 @@ import { apiFetch, onAuthError } from './api';
 import type { User, SystemStats } from './types';
 import { ToastProvider, useToast } from './components/Toast';
 import { LoginGate } from './components/LoginGate';
-import { Header, type TabId } from './components/Header';
+import { Header } from './components/Header';
+import { useAppRouter } from './router';
 import { OverviewTab } from './components/tabs/OverviewTab';
 import { ReviewTab } from './components/tabs/ReviewTab';
 import { PersonsTab } from './components/tabs/PersonsTab';
@@ -17,9 +18,9 @@ import { ScanFace } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
   const { showToast } = useToast();
+  const { activeTab, navigateToTab } = useAppRouter();
   const [user, setUser] = useState<User | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [openAddMemberModal, setOpenAddMemberModal] = useState(false);
 
@@ -124,7 +125,7 @@ const MainAppContent: React.FC = () => {
       {/* Sticky App Header */}
       <Header
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={navigateToTab}
         unrecognizedCount={stats?.unrecognized_count || 0}
         user={user}
         onLogout={handleLogout}
@@ -138,9 +139,9 @@ const MainAppContent: React.FC = () => {
           {activeTab === 'overview' && (
             <OverviewTab
               stats={stats}
-              onNavigateTab={setActiveTab}
+              onNavigateTab={navigateToTab}
               onAddMember={() => {
-                setActiveTab('persons');
+                navigateToTab('persons');
                 setOpenAddMemberModal(true);
               }}
             />
