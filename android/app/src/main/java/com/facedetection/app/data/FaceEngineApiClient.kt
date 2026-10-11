@@ -16,7 +16,8 @@ import java.util.concurrent.TimeUnit
  * 1. Variables must be declared at the top of the class.
  * 2. All network requests must use Coroutines with Dispatchers.IO.
  * 3. Class documentation comments must be maintained for all changes.
- * 4. Strictly adheres to specs/API_SPEC.md data contracts and error formats.
+ * 4. Strictly adheres to specs/API_SPEC.md data contracts, security headers, and error formats.
+ * 5. Handles session authentication, password management, and rate-limiting responses gracefully.
  */
 class FaceEngineApiClient(private val configManager: ServerConfigManager) {
 
@@ -69,7 +70,12 @@ class FaceEngineApiClient(private val configManager: ServerConfigManager) {
             val response = httpClient.newCall(request).execute()
 
             if (!response.isSuccessful) {
-                return@withContext Result.failure(Exception("Login failed: ${response.code} ${response.message}"))
+                val errBody = response.body?.string()
+                val detail = try {
+                    JSONObject(errBody ?: "").optString("detail")
+                } catch (e: Exception) { null }
+                val errorMsg = if (!detail.isNullOrBlank()) detail else "Login failed: ${response.code} ${response.message}"
+                return@withContext Result.failure(Exception(errorMsg))
             }
 
             val body = response.body?.string() ?: return@withContext Result.failure(Exception("Empty login response"))
@@ -81,9 +87,63 @@ class FaceEngineApiClient(private val configManager: ServerConfigManager) {
                 accessToken = token,
                 tokenType = resObj.optString("token_type", "bearer"),
                 expiresIn = resObj.optLong("expires_in", 86400),
-                username = resObj.optString("username", username)
+                username = resObj.optString("username", username),
+                isDefaultPassword = resObj.optBoolean("is_default_password", false)
             )
             Result.success(loginRes)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getCurrentUser(): Result<User> = withContext(Dispatchers.IO) {
+        try {
+            val request = buildRequest("/api/v1/auth/me")
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(Exception("Failed to verify session (${response.code})"))
+            }
+
+            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Empty user profile response"))
+            val json = JSONObject(body)
+            val user = User(
+                id = json.optString("id", "1"),
+                username = json.optString("username", "admin"),
+                isDefaultPassword = json.optBoolean("is_default_password", false)
+            )
+            Result.success(user)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun changePassword(currentPassword: String, newPassword: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val json = JSONObject().apply {
+                put("current_password", currentPassword)
+                put("new_password", newPassword)
+            }
+            val request = buildRequest("/api/v1/auth/change-password", "POST", json.toString().toRequestBody(jsonMediaType))
+            val response = httpClient.newCall(request).execute()
+
+            if (!response.isSuccessful) {
+                val errBody = response.body?.string()
+                val detail = try {
+                    JSONObject(errBody ?: "").optString("detail")
+                } catch (e: Exception) { null }
+                val errorMsg = if (!detail.isNullOrBlank()) detail else "Failed to update password (${response.code})"
+                return@withContext Result.failure(Exception(errorMsg))
+            }
+
+            val body = response.body?.string() ?: ""
+            if (body.isNotBlank()) {
+                val resObj = JSONObject(body)
+                val refreshedToken = resObj.optString("access_token")
+                if (refreshedToken.isNotBlank()) {
+                    configManager.saveAuthToken(refreshedToken)
+                }
+            }
+            Result.success(true)
         } catch (e: Exception) {
             Result.failure(e)
         }

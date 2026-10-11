@@ -11,6 +11,7 @@ import { PersonsTab } from './components/tabs/PersonsTab';
 import { SandboxTab } from './components/tabs/SandboxTab';
 import { RtspTab } from './components/tabs/RtspTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
+import { AccountTab } from './components/tabs/AccountTab';
 import { GuideTab } from './components/tabs/GuideTab';
 import { EventsTab } from './components/tabs/EventsTab';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -176,7 +177,14 @@ const MainAppContent: React.FC = () => {
           )}
 
           {activeTab === 'settings' && (
-            <SettingsTab onSettingsSaved={fetchStats} />
+            <SettingsTab onSettingsSaved={fetchStats} onNavigateTab={navigateToTab} />
+          )}
+
+          {activeTab === 'account' && (
+            <AccountTab
+              user={user}
+              onUserUpdated={checkSession}
+            />
           )}
 
           {activeTab === 'guide' && (

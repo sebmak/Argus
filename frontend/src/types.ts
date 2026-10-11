@@ -1,6 +1,7 @@
 export interface User {
   id: string;
   username: string;
+  is_default_password?: boolean;
 }
 
 export interface FaceSample {

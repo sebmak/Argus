@@ -25,30 +25,65 @@ Authenticates user credentials and initiates a session.
     "access_token": "eyJhbGciOi...",
     "token_type": "bearer",
     "expires_in": 86400,
-    "username": "admin"
+    "username": "admin",
+    "is_default_password": false
   }
   ```
-* **Cookie**: Sets `session_id` with `SameSite=lax; HttpOnly`.
+* **Cookie**: Sets `access_token` with `HttpOnly; SameSite=lax` (and `Secure` when served over HTTPS).
+* **Rate Limiting**: Enforces brute-force lockout after 5 consecutive failed attempts from an IP within a 5-minute window, issuing HTTP `429 Too Many Requests` with a `Retry-After: <seconds>` header.
 
 ### `GET /api/v1/auth/me`
-Retrieves current session identity.
+Retrieves current session identity and security profile.
 * **Response** (`200 OK`):
   ```json
   {
     "id": "admin",
-    "username": "admin"
+    "username": "admin",
+    "is_default_password": false
   }
   ```
 * **Errors**: `401 Unauthorized` if invalid or expired.
+
+### `POST /api/v1/auth/change-password`
+Safely updates administrator password after verifying the existing credentials.
+* **Request Body** (`application/json`):
+  ```json
+  {
+    "current_password": "CurrentAdminPassword",
+    "new_password": "NewStrongPassword123!"
+  }
+  ```
+* **Validation**: `new_password` must be at least 8 characters long and cannot match `current_password`.
+* **Response** (`200 OK`):
+  ```json
+  {
+    "status": "success",
+    "message": "Password updated successfully",
+    "access_token": "eyJhbGciOi..."
+  }
+  ```
+* **Errors**:
+  * `400 Bad Request`: Current password incorrect or new password identical to current.
+  * `422 Unprocessable Entity`: New password under 8 characters.
 
 ### `POST /api/v1/auth/logout`
 Terminates the session and expires the session cookie.
 * **Response** (`200 OK`):
   ```json
   {
+    "status": "success",
     "message": "Logged out successfully"
   }
   ```
+
+### Security Headers & Remote Exposure Hardening
+All responses automatically include:
+* `X-Content-Type-Options: nosniff`
+* `X-Frame-Options: SAMEORIGIN`
+* `X-XSS-Protection: 1; mode=block`
+* `Referrer-Policy: strict-origin-when-cross-origin`
+* `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+* `Strict-Transport-Security: max-age=31536000; includeSubDomains` (when HTTPS)
 
 ---
 

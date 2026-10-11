@@ -23,6 +23,35 @@ def _resolve_config_dir() -> str:
         return "/config"
     return "./data"
 
+def _resolve_secret_key() -> str:
+    """
+    Resolves a cryptographically secure JWT secret key.
+    If not specified in environment, auto-generates and persists a unique 256-bit token in config_dir.
+    """
+    env_key = os.getenv("SECRET_KEY")
+    if env_key and env_key != "super-secret-household-face-detection-key-change-in-prod":
+        return env_key
+
+    config_dir = _resolve_config_dir()
+    secret_file = Path(config_dir) / ".jwt_secret"
+    try:
+        if secret_file.is_file():
+            content = secret_file.read_text().strip()
+            if content:
+                return content
+
+        import secrets
+        new_secret = secrets.token_urlsafe(32)
+        secret_file.parent.mkdir(parents=True, exist_ok=True)
+        secret_file.write_text(new_secret)
+        try:
+            secret_file.chmod(0o600)
+        except Exception:
+            pass
+        return new_secret
+    except Exception:
+        return env_key or "super-secret-household-face-detection-key-change-in-prod"
+
 # Rules for Settings class:
 # 1. Variables and configuration properties must be declared at the top of the class.
 # 2. Defaults are read from environment variables with safe fallbacks.
@@ -32,7 +61,7 @@ def _resolve_config_dir() -> str:
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "Household Face Detection API"
-    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.17")
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.0.18")
     DEBUG: bool = False
 
     # Storage & Unraid Config Paths
@@ -55,11 +84,16 @@ class Settings(BaseSettings):
     MAX_IMAGE_SIZE: int = int(os.getenv("MAX_IMAGE_SIZE", "1280"))  # Downscale 4K/2K frames to max 1280px before inference
     
     # Security & Auth
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-household-face-detection-key-change-in-prod")
+    SECRET_KEY: str = _resolve_secret_key()
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     DEFAULT_ADMIN_USER: str = os.getenv("DEFAULT_ADMIN_USER", "admin")
     DEFAULT_ADMIN_PASSWORD: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
+    COOKIE_SECURE: bool = os.getenv("COOKIE_SECURE", "false").lower() in ("true", "1", "yes")
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "*")
+    RATE_LIMIT_LOGIN_MAX_ATTEMPTS: int = int(os.getenv("RATE_LIMIT_LOGIN_MAX_ATTEMPTS", "5"))
+    RATE_LIMIT_LOGIN_WINDOW_SECONDS: int = int(os.getenv("RATE_LIMIT_LOGIN_WINDOW_SECONDS", "300"))
+    RATE_LIMIT_LOCKOUT_SECONDS: int = int(os.getenv("RATE_LIMIT_LOCKOUT_SECONDS", "900"))
     
     # UniFi Protect Webhook Security
     WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")  # Optional token check

@@ -52,6 +52,12 @@ export const ROUTES: RouteConfig[] = [
     title: 'Settings — FaceEngine',
   },
   {
+    id: 'account',
+    path: '/account',
+    aliases: ['/account', '/security', '/password', '/profile'],
+    title: 'Account & Security — FaceEngine',
+  },
+  {
     id: 'guide',
     path: '/guide',
     aliases: ['/guide', '/integrations', '/docs'],

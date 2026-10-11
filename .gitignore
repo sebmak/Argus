@@ -16,6 +16,8 @@ env/
 data/*.db
 data/*.sqlite*
 data/*.bak
+data/.jwt_secret
+*.jwt_secret
 *.db
 *.db.*.bak
 *.sqlite

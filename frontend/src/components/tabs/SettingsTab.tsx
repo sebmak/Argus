@@ -8,17 +8,21 @@ import {
   RotateCcw,
   History,
   ArrowUpRight,
-  Zap
+  Zap,
+  KeyRound,
+  ShieldCheck
 } from 'lucide-react';
 import { apiFetch } from '../../api';
 import type { SystemSettings, MigrationStatus } from '../../types';
+import type { TabId } from '../Header';
 import { useToast } from '../Toast';
 
 interface SettingsTabProps {
   onSettingsSaved?: () => void;
+  onNavigateTab?: (tab: TabId) => void;
 }
 
-export const SettingsTab: React.FC<SettingsTabProps> = ({ onSettingsSaved }) => {
+export const SettingsTab: React.FC<SettingsTabProps> = ({ onSettingsSaved, onNavigateTab }) => {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -183,6 +187,45 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSettingsSaved }) => 
           <RotateCcw size={14} className={loading ? 'animate-spin' : ''} />
           <span>Reload Settings</span>
         </button>
+      </div>
+
+      {/* Account Security Quick Link */}
+      <div className="glass-panel" style={{
+        padding: '1.25rem 1.5rem',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '1rem',
+        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(147, 51, 234, 0.05) 100%)',
+        border: '1px solid rgba(99, 102, 241, 0.25)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+          <div style={{
+            width: '40px', height: '40px', borderRadius: '10px',
+            background: 'rgba(99, 102, 241, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--accent-indigo)'
+          }}>
+            <KeyRound size={20} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#fff' }}>Administrator Credentials &amp; Remote Security</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Update administrative password, check brute-force protection, and review internet exposure hardening.
+            </div>
+          </div>
+        </div>
+        {onNavigateTab && (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => onNavigateTab('account')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <ShieldCheck size={14} />
+            <span>Manage Password &amp; Account</span>
+          </button>
+        )}
       </div>
 
       <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

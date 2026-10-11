@@ -3,6 +3,7 @@ package com.facedetection.app.ui.navigation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Science
@@ -15,6 +16,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
  * - Represents all navigation destinations within the FaceEngine application.
  * - Variables and route identifiers must be declared at the top of the class/sealed class.
  * - Subclasses must provide a unique route string and appropriate title/icon metadata.
+ * - Includes Account destination for credential management and remote exposure security.
  */
 sealed class Screen(
     val route: String,
@@ -30,6 +32,7 @@ sealed class Screen(
     object Sandbox : Screen("sandbox", "Test Sandbox", Icons.Default.Science)
     object Events : Screen("events", "Event Log", Icons.Default.History)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
+    object Account : Screen("account", "Account & Security", Icons.Default.Lock)
 
     companion object {
         val navItems = listOf(

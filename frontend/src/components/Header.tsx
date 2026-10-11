@@ -9,12 +9,13 @@ import {
   BookOpen,
   LogOut,
   UserCheck,
-  ScrollText
+  ScrollText,
+  KeyRound
 } from 'lucide-react';
 import type { User as UserType } from '../types';
 import { getPathForTab } from '../router';
 
-export type TabId = 'overview' | 'review' | 'persons' | 'sandbox' | 'rtsp' | 'events' | 'settings' | 'guide';
+export type TabId = 'overview' | 'review' | 'persons' | 'sandbox' | 'rtsp' | 'events' | 'settings' | 'account' | 'guide';
 
 interface HeaderProps {
   activeTab: TabId;
@@ -48,6 +49,12 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'rtsp', label: 'RTSP & MQTT', icon: <Radio size={16} /> },
     { id: 'events', label: 'Event Log', icon: <ScrollText size={16} /> },
     { id: 'settings', label: 'Settings', icon: <Settings size={16} /> },
+    {
+      id: 'account',
+      label: 'Account',
+      icon: <KeyRound size={16} />,
+      badge: user.is_default_password ? 1 : undefined
+    },
     { id: 'guide', label: 'Integrations', icon: <BookOpen size={16} /> },
   ];
 
@@ -194,10 +201,44 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* User Actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <div className="chip" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#cbd5e1' }}>
-          <UserCheck size={14} color="var(--accent-emerald)" />
+        <a
+          href={getPathForTab('account')}
+          onClick={(e) => {
+            if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
+              e.preventDefault();
+              onTabChange('account');
+            }
+          }}
+          className="chip"
+          style={{
+            background: activeTab === 'account' ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+            border: activeTab === 'account' ? '1px solid var(--accent-indigo)' : (user.is_default_password ? '1px solid rgba(245, 158, 11, 0.5)' : '1px solid transparent'),
+            color: '#cbd5e1',
+            cursor: 'pointer',
+            textDecoration: 'none',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            transition: 'all 0.2s ease',
+          }}
+          title={user.is_default_password ? 'Warning: Default password in use! Click to change password' : 'Click to manage Account & Security'}
+        >
+          <UserCheck size={14} color={user.is_default_password ? 'var(--accent-amber)' : 'var(--accent-emerald)'} />
           <span>{user.username}</span>
-        </div>
+          {user.is_default_password && (
+            <span style={{
+              background: 'var(--accent-amber)',
+              color: '#000',
+              fontSize: '0.65rem',
+              fontWeight: 800,
+              padding: '1px 5px',
+              borderRadius: '8px',
+              lineHeight: '1.2'
+            }}>
+              INSECURE
+            </span>
+          )}
+        </a>
 
         <button
           onClick={onLogout}

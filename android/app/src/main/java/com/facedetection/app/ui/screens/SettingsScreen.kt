@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -60,12 +61,16 @@ import com.facedetection.app.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
 
 /**
- * Settings screen for tuning facial recognition hyperparameters and managing server connection.
+ * Rules for SettingsScreen:
+ * - Allows tuning facial recognition hyperparameters, engine optimizations, and server endpoints.
+ * - Provides entry points to credential administration and AccountScreen for remote security.
+ * - Coroutine network requests must be safely launched with rememberCoroutineScope.
  */
 @Composable
 fun SettingsScreen(
     configManager: ServerConfigManager,
     apiClient: FaceEngineApiClient,
+    onNavigateToAccount: () -> Unit,
     onSwitchServer: () -> Unit,
     onLogout: () -> Unit
 ) {
@@ -319,6 +324,56 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Save Engine Parameters")
                         }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Account & Security Card
+            Text(
+                text = "Account & Remote Security",
+                color = TextPrimary,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Administrator Credentials",
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Update administrator password, inspect rate limiting, and review internet exposure status.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Button(
+                        onClick = onNavigateToAccount,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BrandPrimary,
+                            contentColor = TextPrimary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Manage Account & Password")
                     }
                 }
             }

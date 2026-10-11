@@ -687,6 +687,29 @@ def verify_user_credentials(username: str, password_plain: str) -> Optional[Dict
         return None
     return user
 
+def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieves user record by user ID."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def update_user_password(user_id: str, new_password_plain: str) -> bool:
+    """Updates the user's password using salted bcrypt hash."""
+    hashed_pw = hash_password(new_password_plain)
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hashed_pw, user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+def is_default_password_used(user: Dict[str, Any]) -> bool:
+    """Returns True if user's password still matches the default initial password."""
+    if not user or not user.get("password_hash"):
+        return False
+    return verify_password(settings.DEFAULT_ADMIN_PASSWORD, user["password_hash"])
+
 # --- Dynamic Settings Storage Helpers ---
 
 DEFAULT_SETTINGS_MAP = {

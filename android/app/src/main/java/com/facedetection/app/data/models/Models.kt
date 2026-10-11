@@ -4,22 +4,26 @@ package com.facedetection.app.data.models
  * Rules for User:
  * - Represents authenticated user session identity.
  * - Variables must be declared at the top of the data class.
+ * - Flags isDefaultPassword to warn when administrative credentials are unhardened.
  */
 data class User(
     val id: String,
-    val username: String
+    val username: String,
+    val isDefaultPassword: Boolean = false
 )
 
 /**
  * Rules for LoginResponse:
  * - Encapsulates JWT authentication token payload returned by /api/v1/auth/login.
  * - Variables must be declared at the top of the data class.
+ * - Propagates isDefaultPassword from authentication endpoint.
  */
 data class LoginResponse(
     val accessToken: String,
     val tokenType: String,
     val expiresIn: Long,
-    val username: String
+    val username: String,
+    val isDefaultPassword: Boolean = false
 )
 
 /**

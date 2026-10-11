@@ -22,6 +22,7 @@ import com.facedetection.app.ui.screens.LoginScreen
 import com.facedetection.app.ui.screens.ReviewQueueScreen
 import com.facedetection.app.ui.screens.RtspScreen
 import com.facedetection.app.ui.screens.SandboxScreen
+import com.facedetection.app.ui.screens.AccountScreen
 import com.facedetection.app.ui.screens.ServerSetupScreen
 import com.facedetection.app.ui.screens.SettingsScreen
 import com.facedetection.app.ui.theme.FaceEngineTheme
@@ -32,6 +33,7 @@ import com.facedetection.app.ui.theme.FaceEngineTheme
  * 2. Asynchronous operations and network calls must prefer Coroutines.
  * 3. Class documentation comments must be maintained for all changes.
  * 4. Provides native Jetpack Compose architecture with adaptive foldable navigation.
+ * 5. Hosts navigation destinations including credential management and AccountScreen.
  */
 class MainActivity : ComponentActivity() {
 
@@ -208,6 +210,9 @@ private fun AppNavHost(
             SettingsScreen(
                 configManager = configManager,
                 apiClient = apiClient,
+                onNavigateToAccount = {
+                    navController.navigate(Screen.Account.route)
+                },
                 onSwitchServer = {
                     navController.navigate(Screen.ServerSetup.route)
                 },
@@ -215,6 +220,16 @@ private fun AppNavHost(
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
+                }
+            )
+        }
+
+        composable(Screen.Account.route) {
+            AccountScreen(
+                configManager = configManager,
+                apiClient = apiClient,
+                onBack = {
+                    navController.popBackStack()
                 }
             )
         }
