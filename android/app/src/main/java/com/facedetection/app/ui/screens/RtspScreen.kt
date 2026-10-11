@@ -56,7 +56,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Screen for viewing real-time RTSP camera surveillance snapshots and controlling the worker.
+ * Rules for RtspScreen:
+ * 1. State variables and reactive properties must be declared at the top of the composable.
+ * 2. Asynchronous operations and polling loops must prefer Coroutines.
+ * 3. Class documentation comments must be maintained for all changes.
+ * 4. Displays live camera snapshots and provides worker start/stop control.
  */
 @Composable
 fun RtspScreen(

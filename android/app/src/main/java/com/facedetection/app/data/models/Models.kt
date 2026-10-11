@@ -161,31 +161,42 @@ data class RecognizeResult(
  * Rules for RtspStatus:
  * - Status and throughput telemetry of the continuous RTSP surveillance worker.
  * - Variables must be declared at the top of the data class.
+ * - Supports is_running and is_connected state flags from FastAPI backend.
  */
 data class RtspStatus(
     val running: Boolean,
+    val isConnected: Boolean = false,
     val url: String?,
     val cameraName: String?,
     val fps: Float,
-    val framesProcessed: Long,
-    val motionGated: Boolean,
-    val idleMode: Boolean,
-    val cooldownSeconds: Int
-)
+    val framesProcessed: Long = 0L,
+    val motionGated: Boolean = true,
+    val motionDetected: Boolean = false,
+    val idleMode: Boolean = false,
+    val cooldownSeconds: Int = 30
+) {
+    val isRunning: Boolean
+        get() = running
+}
 
 /**
  * Rules for EventLog:
- * - Operational event log item from /api/v1/events.
+ * - Operational event log item from /api/v1/events/logs.
  * - Variables must be declared at the top of the data class.
+ * - Preserves category, level, and parsed payload metadata.
  */
 data class EventLog(
     val id: Long,
     val timestamp: String,
     val category: String,
-    val severity: String,
+    val level: String,
+    val eventType: String = "",
     val message: String,
     val details: String = ""
-)
+) {
+    val severity: String
+        get() = level
+}
 
 /**
  * Rules for AppSettings:

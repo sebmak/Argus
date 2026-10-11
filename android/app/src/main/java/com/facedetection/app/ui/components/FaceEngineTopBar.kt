@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -38,7 +39,10 @@ import com.facedetection.app.ui.theme.TextPrimary
 import com.facedetection.app.ui.theme.TextSecondary
 
 /**
- * Top app bar displaying FaceEngine branding, live server connectivity chip, and quick actions.
+ * Rules for FaceEngineTopBar:
+ * - Top app bar displaying FaceEngine branding, live server connectivity chip, and quick actions.
+ * - Top-level variables and layout parameters must be declared at the top of the composable.
+ * - Supports refresh action, switch server dialog action, and optional quick settings navigation.
  */
 @Composable
 fun FaceEngineTopBar(
@@ -46,7 +50,8 @@ fun FaceEngineTopBar(
     serverHost: String,
     isConnected: Boolean,
     onRefresh: (() -> Unit)? = null,
-    onServerClick: (() -> Unit)? = null
+    onServerClick: (() -> Unit)? = null,
+    onSettingsClick: (() -> Unit)? = null
 ) {
     Surface(
         color = BgRoot,
@@ -126,6 +131,17 @@ fun FaceEngineTopBar(
                             contentDescription = "Refresh",
                             tint = TextSecondary,
                             modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                if (onSettingsClick != null) {
+                    IconButton(onClick = onSettingsClick) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }

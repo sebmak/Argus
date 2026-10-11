@@ -7,8 +7,10 @@ import org.junit.Test
 
 /**
  * Rules for ScreenTest:
- * - Validates Screen definitions and navigation items list.
- * - Ensures no null pointers occur during static or dynamic class loading.
+ * 1. Variables must be declared at the top of the test class.
+ * 2. Asynchronous operations must prefer Coroutines where appropriate.
+ * 3. Class documentation comments must be maintained for all changes.
+ * 4. Validates Screen definitions, route uniqueness, and responsive nav item collections.
  */
 class ScreenTest {
 
@@ -22,6 +24,31 @@ class ScreenTest {
             assertTrue("Screen route must not be blank", screen.route.isNotBlank())
             assertNotNull("Screen title must not be null", screen.title)
         }
+    }
+
+    @Test
+    fun testCompactNavItemsFollowMaterial3Guidelines() {
+        val compactItems = Screen.compactNavItems
+        assertEquals(5, compactItems.size)
+        val expectedRoutes = listOf(
+            Screen.Dashboard.route,
+            Screen.Review.route,
+            Screen.Household.route,
+            Screen.Rtsp.route,
+            Screen.Events.route
+        )
+        assertEquals(expectedRoutes, compactItems.map { it.route })
+        compactItems.forEach { screen ->
+            assertTrue("shortTitle must not be blank", screen.shortTitle.isNotBlank())
+            assertTrue("shortTitle should be concise for compact bottom bar", screen.shortTitle.length <= 12)
+        }
+    }
+
+    @Test
+    fun testExpandedNavItemsContainAllSections() {
+        val expandedItems = Screen.expandedNavItems
+        assertEquals(7, expandedItems.size)
+        assertEquals(Screen.navItems.map { it.route }, expandedItems.map { it.route })
     }
 
     @Test

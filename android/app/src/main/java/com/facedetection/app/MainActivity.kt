@@ -27,15 +27,21 @@ import com.facedetection.app.ui.screens.ServerSetupScreen
 import com.facedetection.app.ui.screens.SettingsScreen
 import com.facedetection.app.ui.theme.FaceEngineTheme
 
+import coil.Coil
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import okhttp3.OkHttpClient
+
 /**
  * Rules for MainActivity:
  * 1. Variables must be declared at the top of the class.
  * 2. Asynchronous operations and network calls must prefer Coroutines.
  * 3. Class documentation comments must be maintained for all changes.
- * 4. Provides native Jetpack Compose architecture with adaptive foldable navigation.
- * 5. Hosts navigation destinations including credential management and AccountScreen.
+ * 4. Implements ImageLoaderFactory to supply authenticated OkHttpClient for Coil image requests.
+ * 5. Provides native Jetpack Compose architecture with adaptive foldable navigation.
+ * 6. Top-level navigation cleanly manages backstack to prevent navigation loop defects.
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), ImageLoaderFactory {
 
     private lateinit var configManager: ServerConfigManager
     private lateinit var apiClient: FaceEngineApiClient
@@ -47,6 +53,9 @@ class MainActivity : ComponentActivity() {
         configManager = ServerConfigManager(this)
         apiClient = FaceEngineApiClient(configManager)
 
+        val imageLoader = newImageLoader()
+        Coil.setImageLoader(imageLoader)
+
         setContent {
             FaceEngineTheme {
                 FaceEngineAppContent(
@@ -55,6 +64,26 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun newImageLoader(): ImageLoader {
+        val imageOkHttpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val original = chain.request()
+                val token = configManager.getAuthToken()
+                val requestBuilder = original.newBuilder()
+                if (!token.isNullOrBlank()) {
+                    requestBuilder.header("Authorization", "Bearer $token")
+                    requestBuilder.header("Cookie", "session_id=$token")
+                }
+                chain.proceed(requestBuilder.build())
+            }
+            .build()
+
+        return ImageLoader.Builder(this)
+            .okHttpClient(imageOkHttpClient)
+            .crossfade(true)
+            .build()
     }
 }
 
@@ -78,27 +107,30 @@ fun FaceEngineAppContent(
 
     val isTopLevelDestination = Screen.navItems.any { it.route == currentRoute }
 
-    if (isTopLevelDestination) {
-        AdaptiveNavigationLayout(
-            currentRoute = currentRoute,
-            onNavigate = { screen ->
-                navController.navigate(screen.route) {
-                    popUpTo(navController.graph.findStartDestination().id) {
-                        saveState = true
+    AdaptiveNavigationLayout(
+        currentRoute = currentRoute,
+        showNavigation = isTopLevelDestination,
+        onNavigate = { screen ->
+            if (screen.route != currentRoute) {
+                if (screen.route == Screen.Dashboard.route) {
+                    val popped = navController.popBackStack(Screen.Dashboard.route, inclusive = false)
+                    if (!popped) {
+                        navController.navigate(Screen.Dashboard.route) {
+                            launchSingleTop = true
+                        }
                     }
-                    launchSingleTop = true
-                    restoreState = true
+                } else {
+                    navController.navigate(screen.route) {
+                        popUpTo(Screen.Dashboard.route) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
             }
-        ) {
-            AppNavHost(
-                navController = navController,
-                startDestination = initialRoute,
-                configManager = configManager,
-                apiClient = apiClient
-            )
         }
-    } else {
+    ) {
         AppNavHost(
             navController = navController,
             startDestination = initialRoute,

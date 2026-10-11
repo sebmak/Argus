@@ -28,14 +28,18 @@ import com.facedetection.app.ui.theme.TextMuted
 import com.facedetection.app.ui.theme.TextPrimary
 
 /**
- * Adaptive navigation scaffold supporting:
- * - Bottom NavigationBar when folded or on compact phones (< 600dp width)
- * - Side NavigationRail when unfolded on foldable devices or tablets (>= 600dp width)
+ * Rules for AdaptiveNavigationLayout:
+ * 1. Preserves single NavHost composition subtree across all screen transitions.
+ * 2. Mobile/folded viewport (< 600dp width) renders Screen.compactNavItems in Bottom NavigationBar.
+ * 3. Expanded/tablet viewport (>= 600dp width) renders Screen.expandedNavItems in Side NavigationRail.
+ * 4. Renders concise shortTitle labels and Material 3 touch targets to avoid overlapping mis-clicks.
+ * 5. Toggles navigation container visibility via showNavigation without recreating child content.
  */
 @Composable
 fun AdaptiveNavigationLayout(
     currentRoute: String,
     onNavigate: (Screen) -> Unit,
+    showNavigation: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val configuration = LocalConfiguration.current
@@ -48,32 +52,34 @@ fun AdaptiveNavigationLayout(
                 .fillMaxSize()
                 .background(BgRoot)
         ) {
-            NavigationRail(
-                modifier = Modifier.fillMaxHeight(),
-                containerColor = BgSurface,
-                contentColor = TextPrimary
-            ) {
-                Screen.navItems.forEach { screen ->
-                    val isSelected = currentRoute == screen.route
-                    NavigationRailItem(
-                        selected = isSelected,
-                        onClick = { onNavigate(screen) },
-                        icon = {
-                            screen.icon?.let {
-                                Icon(imageVector = it, contentDescription = screen.title)
-                            }
-                        },
-                        label = {
-                            Text(text = screen.title, fontSize = 11.sp)
-                        },
-                        colors = NavigationRailItemDefaults.colors(
-                            selectedIconColor = TextPrimary,
-                            selectedTextColor = BrandPrimary,
-                            indicatorColor = BrandPrimary,
-                            unselectedIconColor = TextMuted,
-                            unselectedTextColor = TextMuted
+            if (showNavigation) {
+                NavigationRail(
+                    modifier = Modifier.fillMaxHeight(),
+                    containerColor = BgSurface,
+                    contentColor = TextPrimary
+                ) {
+                    Screen.expandedNavItems.forEach { screen ->
+                        val isSelected = currentRoute == screen.route
+                        NavigationRailItem(
+                            selected = isSelected,
+                            onClick = { onNavigate(screen) },
+                            icon = {
+                                screen.icon?.let {
+                                    Icon(imageVector = it, contentDescription = screen.title)
+                                }
+                            },
+                            label = {
+                                Text(text = screen.shortTitle, fontSize = 11.sp)
+                            },
+                            colors = NavigationRailItemDefaults.colors(
+                                selectedIconColor = TextPrimary,
+                                selectedTextColor = BrandPrimary,
+                                indicatorColor = BrandPrimary,
+                                unselectedIconColor = TextMuted,
+                                unselectedTextColor = TextMuted
+                            )
                         )
-                    )
+                    }
                 }
             }
 
@@ -90,35 +96,37 @@ fun AdaptiveNavigationLayout(
         Scaffold(
             containerColor = BgRoot,
             bottomBar = {
-                NavigationBar(
-                    containerColor = BgSurface,
-                    tonalElevation = 8.dp
-                ) {
-                    Screen.navItems.forEach { screen ->
-                        val isSelected = currentRoute == screen.route
-                        NavigationBarItem(
-                            selected = isSelected,
-                            onClick = { onNavigate(screen) },
-                            icon = {
-                                screen.icon?.let {
-                                    Icon(imageVector = it, contentDescription = screen.title)
-                                }
-                            },
-                            label = {
-                                Text(
-                                    text = screen.title,
-                                    fontSize = 10.sp,
-                                    maxLines = 1
+                if (showNavigation) {
+                    NavigationBar(
+                        containerColor = BgSurface,
+                        tonalElevation = 8.dp
+                    ) {
+                        Screen.compactNavItems.forEach { screen ->
+                            val isSelected = currentRoute == screen.route
+                            NavigationBarItem(
+                                selected = isSelected,
+                                onClick = { onNavigate(screen) },
+                                icon = {
+                                    screen.icon?.let {
+                                        Icon(imageVector = it, contentDescription = screen.title)
+                                    }
+                                },
+                                label = {
+                                    Text(
+                                        text = screen.shortTitle,
+                                        fontSize = 11.sp,
+                                        maxLines = 1
+                                    )
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = TextPrimary,
+                                    selectedTextColor = BrandPrimary,
+                                    indicatorColor = BrandPrimary,
+                                    unselectedIconColor = TextMuted,
+                                    unselectedTextColor = TextMuted
                                 )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = TextPrimary,
-                                selectedTextColor = BrandPrimary,
-                                indicatorColor = BrandPrimary,
-                                unselectedIconColor = TextMuted,
-                                unselectedTextColor = TextMuted
                             )
-                        )
+                        }
                     }
                 }
             }
@@ -126,7 +134,7 @@ fun AdaptiveNavigationLayout(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues)
+                    .padding(if (showNavigation) paddingValues else androidx.compose.foundation.layout.PaddingValues(0.dp))
             ) {
                 content()
             }

@@ -372,6 +372,8 @@ class FaceEngineApiClient(private val configManager: ServerConfigManager) {
         }
     }
 
+    fun getAuthToken(): String? = configManager.getAuthToken()
+
     suspend fun getRtspStatus(): Result<RtspStatus> = withContext(Dispatchers.IO) {
         try {
             val request = buildRequest("/api/v1/rtsp/status")
@@ -382,13 +384,28 @@ class FaceEngineApiClient(private val configManager: ServerConfigManager) {
 
             val body = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
             val json = JSONObject(body)
+
+            val isRunning = json.optBoolean("is_running", json.optBoolean("running", false))
+            val isConnected = json.optBoolean("is_connected", false)
+            val fpsVal = when {
+                json.has("actual_fps") -> json.optDouble("actual_fps", 0.0)
+                json.has("fps_actual") -> json.optDouble("fps_actual", 0.0)
+                json.has("target_fps") -> json.optDouble("target_fps", 3.0)
+                else -> json.optDouble("fps", 3.0)
+            }.toFloat()
+
+            val motionGated = json.optBoolean("motion_gating_enabled", json.optBoolean("motion_gated", true))
+            val motionDetected = json.optBoolean("motion_detected", false)
+
             val status = RtspStatus(
-                running = json.optBoolean("running", false),
+                running = isRunning,
+                isConnected = isConnected,
                 url = json.optStringOrNull("url"),
                 cameraName = json.optStringOrNull("camera_name"),
-                fps = json.optDouble("fps", 3.0).toFloat(),
+                fps = fpsVal,
                 framesProcessed = json.optLong("frames_processed", 0L),
-                motionGated = json.optBoolean("motion_gated", true),
+                motionGated = motionGated,
+                motionDetected = motionDetected,
                 idleMode = json.optBoolean("idle_mode", false),
                 cooldownSeconds = json.optInt("cooldown_seconds", 30)
             )
@@ -418,12 +435,16 @@ class FaceEngineApiClient(private val configManager: ServerConfigManager) {
         }
     }
 
-    suspend fun getEvents(category: String? = null, severity: String? = null, limit: Int = 40): Result<List<EventLog>> = withContext(Dispatchers.IO) {
+    suspend fun getEvents(category: String? = null, level: String? = null, limit: Int = 50): Result<List<EventLog>> = withContext(Dispatchers.IO) {
         try {
             val path = buildString {
-                append("/api/v1/events?limit=").append(limit)
-                if (!category.isNullOrBlank() && category.lowercase() != "all") append("&category=").append(category)
-                if (!severity.isNullOrBlank()) append("&severity=").append(severity)
+                append("/api/v1/events/logs?limit=").append(limit)
+                if (!category.isNullOrBlank() && category.lowercase() != "all") {
+                    append("&category=").append(category.lowercase())
+                }
+                if (!level.isNullOrBlank() && level.lowercase() != "all") {
+                    append("&level=").append(level.lowercase())
+                }
             }
             val request = buildRequest(path)
             val response = httpClient.newCall(request).execute()
@@ -433,19 +454,28 @@ class FaceEngineApiClient(private val configManager: ServerConfigManager) {
 
             val body = response.body?.string() ?: return@withContext Result.failure(Exception("Empty events response"))
             val json = JSONObject(body)
-            val eventsArr = json.optJSONArray("events") ?: JSONArray()
+            val logsArr = json.optJSONArray("logs") ?: json.optJSONArray("events") ?: JSONArray()
             val list = mutableListOf<EventLog>()
 
-            for (i in 0 until eventsArr.length()) {
-                val item = eventsArr.getJSONObject(i)
+            for (i in 0 until logsArr.length()) {
+                val item = logsArr.getJSONObject(i)
+                val detailsRaw = item.opt("details")
+                val detailsStr = when (detailsRaw) {
+                    is JSONObject -> detailsRaw.toString(2)
+                    is String -> detailsRaw
+                    null -> ""
+                    else -> detailsRaw.toString()
+                }
+
                 list.add(
                     EventLog(
                         id = item.optLong("id", i.toLong()),
                         timestamp = item.optString("timestamp", ""),
                         category = item.optString("category", "system"),
-                        severity = item.optString("severity", "info"),
+                        level = item.optString("level", item.optString("severity", "info")),
+                        eventType = item.optString("event_type", ""),
                         message = item.optString("message", ""),
-                        details = item.optString("details", "")
+                        details = detailsStr
                     )
                 )
             }

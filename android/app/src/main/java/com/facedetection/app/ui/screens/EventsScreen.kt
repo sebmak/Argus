@@ -57,7 +57,11 @@ import com.facedetection.app.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
 
 /**
- * Screen displaying the FaceEngine real-time event log with category filtering.
+ * Rules for EventsScreen:
+ * 1. State variables and reactive properties must be declared at the top of the composable.
+ * 2. Asynchronous operations and event querying must prefer Coroutines.
+ * 3. Class documentation comments must be maintained for all changes.
+ * 4. Displays real-time operational logs filtered by category with level severity badges.
  */
 @Composable
 fun EventsScreen(
@@ -69,7 +73,7 @@ fun EventsScreen(
     var selectedCategory by remember { mutableStateOf("All") }
     var isLoading by remember { mutableStateOf(true) }
 
-    val categories = listOf("All", "detection", "system", "mqtt", "webhook", "error")
+    val categories = listOf("All", "detection", "motion", "system", "auth", "mqtt", "webhook", "error")
 
     fun loadEvents() {
         coroutineScope.launch {
@@ -181,9 +185,11 @@ fun EventsScreen(
 private fun EventRowCard(item: EventLog) {
     val categoryColor = when (item.category.lowercase()) {
         "detection" -> BrandEmerald
-        "system" -> BrandCyan
+        "motion" -> BrandCyan
+        "system" -> BrandPurple
+        "auth" -> BrandAmber
         "error" -> BrandRose
-        "mqtt" -> BrandPurple
+        "mqtt" -> BrandCyan
         "webhook" -> BrandAmber
         else -> BrandPrimary
     }

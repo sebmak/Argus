@@ -68,7 +68,11 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Dashboard screen providing real-time telemetry, camera status, and recent detection activity.
+ * Rules for DashboardScreen:
+ * 1. State variables and reactive properties must be declared at the top of the composable.
+ * 2. Asynchronous operations and API polling must prefer Coroutines.
+ * 3. Class documentation comments must be maintained for all changes.
+ * 4. Provides real-time telemetry, camera status, and quick navigation to all application modules.
  */
 @Composable
 fun DashboardScreen(
@@ -116,7 +120,8 @@ fun DashboardScreen(
             serverHost = apiClient.getBaseUrl().removePrefix("http://").removePrefix("https://"),
             isConnected = stats != null,
             onRefresh = { refreshStats() },
-            onServerClick = onSwitchServer
+            onServerClick = onSwitchServer,
+            onSettingsClick = { onNavigate(Screen.Settings) }
         )
 
         if (isLoading && stats == null) {
@@ -186,7 +191,7 @@ fun DashboardScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // Quick Navigation Actions
                 Row(
@@ -211,6 +216,29 @@ fun DashboardScreen(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("Live Camera", color = BrandCyan, fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { onNavigate(Screen.Sandbox) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Test Sandbox", color = BrandPurple, fontSize = 12.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = { onNavigate(Screen.Settings) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Settings", color = TextSecondary, fontSize = 12.sp)
                     }
                 }
 
