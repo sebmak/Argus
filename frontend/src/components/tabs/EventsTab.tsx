@@ -274,7 +274,7 @@ export const EventsTab: React.FC = () => {
       {/* 1. Header Banner & Telemetry Cards */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))',
         gap: '1rem',
       }}>
         {/* Stream Motion State Card */}

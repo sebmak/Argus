@@ -176,7 +176,7 @@ export const SandboxTab: React.FC = () => {
 
       {/* Threshold Config Collapsible */}
       {showConfig && (
-        <div className="glass-panel" style={{ padding: '1.25rem 1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+        <div className="glass-panel" style={{ padding: '1.25rem 1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '1.5rem' }}>
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <label className="form-label" style={{ margin: 0 }}>Face Confidence Cutoff</label>

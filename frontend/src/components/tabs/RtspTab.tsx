@@ -236,7 +236,7 @@ export const RtspTab: React.FC = () => {
       </div>
 
       {/* Real-time Telemetry Status Bar */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: '1rem' }}>
         {/* Worker Status */}
         <div className="glass-panel" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div style={{
@@ -337,7 +337,7 @@ export const RtspTab: React.FC = () => {
       </div>
 
       {/* Main Grid: Live Monitor & Configuration Form */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: '1.5rem' }}>
         {/* Live Camera Feed & Recent RTSP Event */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* Live Preview Screen */}

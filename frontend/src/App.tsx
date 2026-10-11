@@ -125,7 +125,7 @@ const MainAppContent: React.FC = () => {
   const isNativeAndroid = typeof navigator !== 'undefined' && navigator.userAgent.includes('FaceEngineAndroid');
 
   return (
-    <div style={{ minHeight: '100vh', paddingBottom: isNativeAndroid ? '1.5rem' : '3rem', paddingTop: isNativeAndroid ? '0.75rem' : 0 }}>
+    <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', paddingBottom: isNativeAndroid ? '1.5rem' : '3rem', paddingTop: isNativeAndroid ? '0.5rem' : 0 }}>
       {/* Sticky App Header (hidden on native Android companion where native bottom nav / rail is used) */}
       {!isNativeAndroid && (
         <Header

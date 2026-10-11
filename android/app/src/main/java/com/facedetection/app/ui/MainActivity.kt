@@ -209,7 +209,11 @@ class MainActivity : AppCompatActivity() {
         webSettings.databaseEnabled = true
         webSettings.allowFileAccess = true
         webSettings.loadWithOverviewMode = true
-        webSettings.useWideViewPort = true
+        webSettings.useWideViewPort = false
+        webSettings.textZoom = 100
+        binding.webView.isVerticalScrollBarEnabled = true
+        binding.webView.isHorizontalScrollBarEnabled = false
+        binding.webView.overScrollMode = View.OVER_SCROLL_NEVER
         webSettings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         webSettings.cacheMode = WebSettings.LOAD_DEFAULT
         // Tag user agent so the web app recognizes the native Android companion
@@ -288,13 +292,40 @@ class MainActivity : AppCompatActivity() {
         val js = """
             (function() {
                 var styleId = 'native-android-styles';
-                var existing = document.getElementById(styleId);
-                if (!existing) {
-                    var style = document.createElement('style');
+                var style = document.getElementById(styleId);
+                if (!style) {
+                    style = document.createElement('style');
                     style.id = styleId;
-                    style.textContent = 'header.glass-panel { display: none !important; } main.container { padding-top: 0.5rem !important; padding-bottom: 2rem !important; }';
                     document.head.appendChild(style);
                 }
+                style.textContent = `
+                    header.glass-panel { display: none !important; }
+                    html, body {
+                        width: 100% !important;
+                        max-width: 100vw !important;
+                        overflow-x: hidden !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                    }
+                    main.container {
+                        max-width: 100% !important;
+                        width: 100% !important;
+                        padding: 0.75rem 0.5rem 2rem 0.5rem !important;
+                        box-sizing: border-box !important;
+                    }
+                    .glass-panel, .glass-card {
+                        max-width: 100% !important;
+                        width: 100% !important;
+                        box-sizing: border-box !important;
+                    }
+                    @media (max-width: 768px) {
+                        div[style*="display: grid"],
+                        div[style*="display:grid"] {
+                            grid-template-columns: 1fr !important;
+                            max-width: 100% !important;
+                        }
+                    }
+                `;
             })();
         """.trimIndent()
         view?.evaluateJavascript(js, null)

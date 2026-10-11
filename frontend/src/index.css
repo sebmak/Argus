@@ -34,6 +34,12 @@
   padding: 0;
 }
 
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+}
+
 body {
   background: var(--bg-main) var(--bg-gradient);
   background-attachment: fixed;
@@ -74,6 +80,8 @@ h1, h2, h3, h4, .brand-title {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-panel);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .glass-panel:hover {
@@ -85,6 +93,8 @@ h1, h2, h3, h4, .brand-title {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   transition: all 0.2s ease;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .glass-card:hover {
@@ -96,8 +106,34 @@ h1, h2, h3, h4, .brand-title {
 /* Layout Container */
 .container {
   max-width: 1440px;
+  width: 100%;
   margin: 0 auto;
   padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 0.75rem 0.6rem;
+  }
+
+  /* Force grids with wide minmax to stack into single column on narrow/folded devices */
+  div[style*="minmax(400px"],
+  div[style*="minmax(420px"],
+  div[style*="minmax(380px"],
+  div[style*="minmax(280px"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .container {
+    padding: 0.5rem 0.35rem;
+  }
+
+  .glass-panel {
+    padding: 1rem !important;
+  }
 }
 
 /* Buttons */
