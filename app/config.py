@@ -60,8 +60,8 @@ def _resolve_secret_key() -> str:
 # 5. Configures real-time stream motion gating and threshold settings to optimize CPU usage on static video feeds.
 class Settings(BaseSettings):
     # App Information
-    APP_NAME: str = "Household Face Detection API"
-    APP_VERSION: str = os.getenv("APP_VERSION", "0.1.0")
+    APP_NAME: str = "Argus"
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.2.0")
     DEBUG: bool = False
 
     # Storage & Unraid Config Paths
