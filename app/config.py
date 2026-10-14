@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional, Any
 
 try:
     from pydantic_settings import BaseSettings
@@ -52,16 +53,26 @@ def _resolve_secret_key() -> str:
     except Exception:
         return env_key or "super-secret-household-face-detection-key-change-in-prod"
 
+def _normalize_threshold(raw_val: Optional[str], default: float) -> float:
+    if raw_val is None:
+        return default
+    try:
+        f = float(str(raw_val).strip())
+        return f / 100.0 if f > 1.0 else max(0.0, f)
+    except (ValueError, TypeError):
+        return default
+
 # Rules for Settings class:
 # 1. Variables and configuration properties must be declared at the top of the class.
 # 2. Defaults are read from environment variables with safe fallbacks.
 # 3. Dynamic runtime overrides are synchronized with the SQLite settings table without container restarts.
 # 4. Supports detector engine selection ('yolov8_face' or 'scrfd') with dedicated YOLO model parameters.
 # 5. Configures real-time stream motion gating and threshold settings to optimize CPU usage on static video feeds.
+# 6. Normalizes percentage threshold inputs (e.g. 65 -> 0.65) to protect against runtime inference suppression.
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "Argus"
-    APP_VERSION: str = os.getenv("APP_VERSION", "0.2.0")
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.2.1")
     DEBUG: bool = False
 
     # Storage & Unraid Config Paths
@@ -73,8 +84,8 @@ class Settings(BaseSettings):
     FACE_MODEL_NAME: str = os.getenv("FACE_MODEL_NAME", "buffalo_l")  # 'buffalo_l' or 'buffalo_s'
     FACE_DETECTOR_TYPE: str = os.getenv("FACE_DETECTOR_TYPE", "yolov8_face")  # 'yolov8_face' or 'scrfd'
     YOLO_FACE_MODEL_NAME: str = os.getenv("YOLO_FACE_MODEL_NAME", "yolov8n-face.onnx")
-    SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.45"))
-    DETECTION_CONFIDENCE: float = float(os.getenv("DETECTION_CONFIDENCE", "0.60"))
+    SIMILARITY_THRESHOLD: float = _normalize_threshold(os.getenv("SIMILARITY_THRESHOLD"), 0.45)
+    DETECTION_CONFIDENCE: float = _normalize_threshold(os.getenv("DETECTION_CONFIDENCE"), 0.60)
     MAX_SAMPLES_PER_PERSON: int = int(os.getenv("MAX_SAMPLES_PER_PERSON", "50"))
     UNRECOGNIZED_TRACK_WINDOW_SECONDS: int = int(os.getenv("UNRECOGNIZED_TRACK_WINDOW_SECONDS", "15"))
     
@@ -111,9 +122,9 @@ class Settings(BaseSettings):
     WEBHOOK_ONLY_KNOWN_FACES: bool = os.getenv("WEBHOOK_ONLY_KNOWN_FACES", os.getenv("RTSP_WEBHOOK_ONLY_KNOWN", "true")).lower() in ("true", "1", "yes")  # Restrict outgoing webhooks strictly to known faces
 
     # Event Notification Thresholds
-    NOTIFICATION_THRESHOLD: float = float(os.getenv("NOTIFICATION_THRESHOLD", "0.55"))  # Min similarity score to emit alert
+    NOTIFICATION_THRESHOLD: float = _normalize_threshold(os.getenv("NOTIFICATION_THRESHOLD"), 0.55)  # Min similarity score to emit alert
     NOTIFY_ON_UNKNOWN: bool = os.getenv("NOTIFY_ON_UNKNOWN", "false").lower() in ("true", "1", "yes")  # Alert on unknown faces
-    UNKNOWN_MIN_CONFIDENCE: float = float(os.getenv("UNKNOWN_MIN_CONFIDENCE", "0.60"))  # Min confidence for unknown faces
+    UNKNOWN_MIN_CONFIDENCE: float = _normalize_threshold(os.getenv("UNKNOWN_MIN_CONFIDENCE"), 0.60)  # Min confidence for unknown faces
 
     # MQTT Broker Event Notification Settings
     MQTT_ENABLED: bool = os.getenv("MQTT_ENABLED", "false").lower() in ("true", "1", "yes")
