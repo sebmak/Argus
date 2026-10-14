@@ -30,7 +30,7 @@ def _resolve_secret_key() -> str:
     If not specified in environment, auto-generates and persists a unique 256-bit token in config_dir.
     """
     env_key = os.getenv("SECRET_KEY")
-    if env_key and env_key != "super-secret-household-face-detection-key-change-in-prod":
+    if env_key and env_key != "super-secret-argus-key-change-in-prod" and env_key != "super-secret-household-face-detection-key-change-in-prod":
         return env_key
 
     config_dir = _resolve_config_dir()
@@ -51,7 +51,7 @@ def _resolve_secret_key() -> str:
             pass
         return new_secret
     except Exception:
-        return env_key or "super-secret-household-face-detection-key-change-in-prod"
+        return env_key or "super-secret-argus-key-change-in-prod"
 
 def _normalize_threshold(raw_val: Optional[str], default: float) -> float:
     if raw_val is None:
@@ -64,15 +64,16 @@ def _normalize_threshold(raw_val: Optional[str], default: float) -> float:
 
 # Rules for Settings class:
 # 1. Variables and configuration properties must be declared at the top of the class.
-# 2. Defaults are read from environment variables with safe fallbacks.
+# 2. Defaults are read from environment variables with safe fallbacks adhering to Argus branding defaults.
 # 3. Dynamic runtime overrides are synchronized with the SQLite settings table without container restarts.
 # 4. Supports detector engine selection ('yolov8_face' or 'scrfd') with dedicated YOLO model parameters.
 # 5. Configures real-time stream motion gating and threshold settings to optimize CPU usage on static video feeds.
 # 6. Normalizes percentage threshold inputs (e.g. 65 -> 0.65) to protect against runtime inference suppression.
+# 7. Default MQTT topic is 'argus/events' and default product application name is 'Argus'.
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "Argus"
-    APP_VERSION: str = os.getenv("APP_VERSION", "0.2.1")
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.2.2")
     DEBUG: bool = False
 
     # Storage & Unraid Config Paths
@@ -132,7 +133,7 @@ class Settings(BaseSettings):
     MQTT_PORT: int = int(os.getenv("MQTT_PORT", "1883"))
     MQTT_USER: str = os.getenv("MQTT_USER", "")
     MQTT_PASSWORD: str = os.getenv("MQTT_PASSWORD", "")
-    MQTT_TOPIC: str = os.getenv("MQTT_TOPIC", "facedetection/events")
+    MQTT_TOPIC: str = os.getenv("MQTT_TOPIC", "argus/events")
     MQTT_ONLY_KNOWN_FACES: bool = os.getenv("MQTT_ONLY_KNOWN_FACES", os.getenv("WEBHOOK_ONLY_KNOWN_FACES", "true")).lower() in ("true", "1", "yes")  # Restrict MQTT events strictly to known faces
 
     @property
